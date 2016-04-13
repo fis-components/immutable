@@ -83,7 +83,23 @@ function invariant(condition, error) {
     throw new Error(error);
 }
 var DELETE = 'delete';
-var ITERATOR = typeof Symbol !== 'undefined' ? Symbol.iterator : '@@iterator';
+var FAUX_ITERATOR = '@@iterator';
+var ITERATOR = typeof Symbol !== 'undefined' ? Symbol.iterator : FAUX_ITERATOR;
+function isIterable(maybeIterable) {
+  return !!_iteratorFn(maybeIterable);
+}
+function isIterator(maybeIterator) {
+  return maybeIterator && typeof maybeIterator.next === 'function';
+}
+function getIterator(iterable) {
+  var iteratorFn = _iteratorFn(iterable);
+  if (typeof iteratorFn === 'function') {
+    return iteratorFn.call(iterable);
+  }
+}
+function _iteratorFn(iterable) {
+  return iterable && (iterable[ITERATOR] || iterable[FAUX_ITERATOR]);
+}
 function hash(o) {
   if (!o) {
     return 0;
@@ -108,15 +124,15 @@ function hash(o) {
   return hashJSObj(o);
 }
 function cachedHashString(string) {
-  var hash = STRING_HASH_CACHE[string];
+  var hash = stringHashCache[string];
   if (hash == null) {
     hash = hashString(string);
     if (STRING_HASH_CACHE_SIZE === STRING_HASH_CACHE_MAX_SIZE) {
       STRING_HASH_CACHE_SIZE = 0;
-      STRING_HASH_CACHE = {};
+      stringHashCache = {};
     }
     STRING_HASH_CACHE_SIZE++;
-    STRING_HASH_CACHE[string] = hash;
+    stringHashCache[string] = hash;
   }
   return hash;
 }
@@ -128,37 +144,70 @@ function hashString(string) {
   return hash;
 }
 function hashJSObj(obj) {
-  if (obj[UID_HASH_KEY]) {
-    return obj[UID_HASH_KEY];
+  var hash = obj[UID_HASH_KEY];
+  if (hash)
+    return hash;
+  if (!canDefineProperty) {
+    hash = obj.propertyIsEnumerable && obj.propertyIsEnumerable[UID_HASH_KEY];
+    if (hash)
+      return hash;
+    hash = getIENodeHash(obj);
+    if (hash)
+      return hash;
   }
-  var uid = ++UID_HASH_COUNT & HASH_MAX_VAL;
-  if (!isIE8) {
-    try {
+  if (!canDefineProperty || Object.isExtensible(obj)) {
+    hash = ++objHashUID & HASH_MAX_VAL;
+    if (canDefineProperty) {
       Object.defineProperty(obj, UID_HASH_KEY, {
         'enumerable': false,
         'configurable': false,
         'writable': false,
-        'value': uid
+        'value': hash
       });
-      return uid;
-    } catch (e) {
-      isIE8 = true;
+    } else if (propertyIsEnumerable && obj.propertyIsEnumerable === propertyIsEnumerable) {
+      obj.propertyIsEnumerable = function() {
+        return propertyIsEnumerable.apply(this, arguments);
+      };
+      obj.propertyIsEnumerable[UID_HASH_KEY] = hash;
+    } else if (obj.nodeType) {
+      obj[UID_HASH_KEY] = hash;
+    } else {
+      throw new Error('Unable to set a non-enumerable property on object.');
+    }
+    return hash;
+  } else {
+    throw new Error('Non-extensible objects are not allowed as keys.');
+  }
+}
+var propertyIsEnumerable = Object.prototype.propertyIsEnumerable;
+var canDefineProperty = (function() {
+  try {
+    Object.defineProperty({}, 'x', {});
+    return true;
+  } catch (e) {
+    return false;
+  }
+}());
+function getIENodeHash(node) {
+  if (node && node.nodeType > 0) {
+    switch (node.nodeType) {
+      case 1:
+        return node.uniqueID;
+      case 9:
+        return node.documentElement && node.documentElement.uniqueID;
     }
   }
-  obj[UID_HASH_KEY] = uid;
-  return uid;
 }
 var HASH_MAX_VAL = 0x7FFFFFFF;
-var UID_HASH_COUNT = 0;
+var objHashUID = 0;
 var UID_HASH_KEY = '__immutablehash__';
 if (typeof Symbol !== 'undefined') {
   UID_HASH_KEY = Symbol(UID_HASH_KEY);
 }
-var isIE8 = false;
 var STRING_HASH_CACHE_MIN_STRLEN = 16;
 var STRING_HASH_CACHE_MAX_SIZE = 255;
 var STRING_HASH_CACHE_SIZE = 0;
-var STRING_HASH_CACHE = {};
+var stringHashCache = {};
 var Sequence = function Sequence(value) {
   return $Sequence.from(arguments.length === 1 ? value : Array.prototype.slice.call(arguments));
 };
@@ -251,17 +300,13 @@ var $Sequence = Sequence;
   },
   join: function(separator) {
     separator = separator !== undefined ? '' + separator : ',';
-    var string = '';
+    var joined = '';
     var isFirst = true;
-    this.forEach((function(v, k) {
-      if (isFirst) {
-        isFirst = false;
-        string += (v != null ? v : '');
-      } else {
-        string += separator + (v != null ? v : '');
-      }
+    this.forEach((function(v) {
+      isFirst ? (isFirst = false) : (joined += separator);
+      joined += v != null ? v : '';
     }));
-    return string;
+    return joined;
   },
   count: function(predicate, thisArg) {
     if (!predicate) {
@@ -292,41 +337,16 @@ var $Sequence = Sequence;
     for (var values = [],
         $__2 = 0; $__2 < arguments.length; $__2++)
       values[$__2] = arguments[$__2];
-    var sequences = [this].concat(values.map((function(value) {
-      return $Sequence(value);
-    })));
-    var concatSequence = this.__makeSequence();
-    concatSequence.length = sequences.reduce((function(sum, seq) {
-      return sum != null && seq.length != null ? sum + seq.length : undefined;
-    }), 0);
-    concatSequence.__iterateUncached = (function(fn, reverse) {
-      var iterations = 0;
-      var stoppedIteration;
-      var lastIndex = sequences.length - 1;
-      for (var ii = 0; ii <= lastIndex && !stoppedIteration; ii++) {
-        var seq = sequences[reverse ? lastIndex - ii : ii];
-        iterations += seq.__iterate((function(v, k, c) {
-          if (fn(v, k, c) === false) {
-            stoppedIteration = true;
-            return false;
-          }
-        }), reverse);
-      }
-      return iterations;
-    });
-    return concatSequence;
+    return concatFactory(this, values, true);
+  },
+  flatten: function() {
+    return flattenFactory(this, true);
+  },
+  flatMap: function(mapper, thisArg) {
+    return this.map(mapper, thisArg).flatten();
   },
   reverse: function() {
-    var sequence = this;
-    var reversedSequence = sequence.__makeSequence();
-    reversedSequence.reverse = (function() {
-      return sequence;
-    });
-    reversedSequence.length = sequence.length;
-    reversedSequence.__iterateUncached = (function(fn, reverse) {
-      return sequence.__iterate(fn, !reverse);
-    });
-    return reversedSequence;
+    return reverseFactory(this, true);
   },
   keySeq: function() {
     return this.flip().valueSeq();
@@ -359,7 +379,7 @@ var $Sequence = Sequence;
     if (sequence._cache) {
       return $Sequence(sequence._cache);
     }
-    var entriesSequence = sequence.map(entryMapper).valueSeq();
+    var entriesSequence = sequence.toKeyedSeq().map(entryMapper).valueSeq();
     entriesSequence.fromEntries = (function() {
       return sequence;
     });
@@ -424,10 +444,16 @@ var $Sequence = Sequence;
     }), null, notSetValue);
   },
   getIn: function(searchKeyPath, notSetValue) {
-    if (!searchKeyPath || searchKeyPath.length === 0) {
-      return this;
+    var nested = this;
+    if (searchKeyPath) {
+      for (var ii = 0; ii < searchKeyPath.length; ii++) {
+        nested = nested && nested.get ? nested.get(searchKeyPath[ii], NOT_SET) : NOT_SET;
+        if (nested === NOT_SET) {
+          return notSetValue;
+        }
+      }
     }
-    return getInDeepSequence(this, searchKeyPath, notSetValue, 0);
+    return nested;
   },
   contains: function(searchValue) {
     return this.find((function(value) {
@@ -488,10 +514,16 @@ var $Sequence = Sequence;
     return mappedSequence;
   },
   mapKeys: function(mapper, thisArg) {
-    return this.flip().map(mapper, thisArg).flip();
+    var $__0 = this;
+    return this.flip().map((function(k, v) {
+      return mapper.call(thisArg, k, v, $__0);
+    })).flip();
   },
   mapEntries: function(mapper, thisArg) {
-    return this.entrySeq().map(mapper, thisArg).fromEntrySeq();
+    var $__0 = this;
+    return this.entrySeq().map((function(entry, index) {
+      return mapper.call(thisArg, entry, index, $__0);
+    })).fromEntrySeq();
   },
   filter: function(predicate, thisArg) {
     return filterFactory(this, predicate, thisArg, true);
@@ -519,12 +551,15 @@ var $Sequence = Sequence;
     var takeSequence = sequence.__makeSequence();
     takeSequence.__iterateUncached = function(fn, reverse, reverseIndices) {
       var $__0 = this;
+      if (amount === 0) {
+        return 0;
+      }
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, reverseIndices);
       }
       var iterations = 0;
       sequence.__iterate((function(v, k) {
-        return iterations < amount && ++iterations && fn(v, k, $__0);
+        return ++iterations && fn(v, k, $__0) !== false && iterations < amount;
       }));
       return iterations;
     };
@@ -610,6 +645,12 @@ var $Sequence = Sequence;
       return value;
     }
     if (!Array.isArray(value)) {
+      if (isIterator(value)) {
+        return new IteratorSequence(value);
+      }
+      if (isIterable(value)) {
+        return new IterableSequence(value);
+      }
       if (value && value.constructor === Object) {
         return new ObjectSequence(value);
       }
@@ -652,45 +693,14 @@ var $IndexedSequence = IndexedSequence;
     };
     return fromEntriesSequence;
   },
-  join: function(separator) {
-    separator = separator !== undefined ? '' + separator : ',';
-    var joined = '';
-    this.forEach((function(v, ii) {
-      joined += (ii ? separator : '') + (v != null ? v : '');
-    }));
-    return joined;
-  },
   concat: function() {
     for (var values = [],
         $__3 = 0; $__3 < arguments.length; $__3++)
       values[$__3] = arguments[$__3];
-    var sequences = [this].concat(values);
-    var concatSequence = Sequence(sequences).flatten();
-    concatSequence.length = sequences.reduce((function(sum, seq) {
-      if (sum !== undefined) {
-        var len = Sequence(seq).length;
-        if (len != null) {
-          return sum + len;
-        }
-      }
-    }), 0);
-    return concatSequence;
+    return concatFactory(this, values, false);
   },
   reverse: function() {
-    var sequence = this;
-    var reversedSequence = sequence.__makeSequence();
-    reversedSequence.reverse = (function() {
-      return sequence;
-    });
-    reversedSequence.length = sequence.length;
-    reversedSequence.__iterateUncached = function(fn, reverse, reverseIndices) {
-      var $__0 = this;
-      var i = reverseIndices ? this.length : 0;
-      return sequence.__iterate((function(v) {
-        return fn(v, reverseIndices ? --i : i++, $__0) !== false;
-      }), !reverse);
-    };
-    return reversedSequence;
+    return reverseFactory(this, false);
   },
   filter: function(predicate, thisArg) {
     return filterFactory(this, predicate, thisArg, false);
@@ -733,28 +743,7 @@ var $IndexedSequence = IndexedSequence;
     return numArgs === 1 ? spliced : spliced.concat(arrCopy(arguments, 2), this.slice(index + removeNum));
   },
   flatten: function() {
-    var sequence = this;
-    var flatSequence = this.__makeSequence();
-    flatSequence.__iterateUncached = function(fn, reverse, reverseIndices) {
-      var $__0 = this;
-      var iterations = 0;
-      var maxIndex = this.length - 1;
-      sequence.__iterate((function(seq) {
-        var stopped = false;
-        Sequence(seq).__iterate((function(v) {
-          if (fn(v, reverseIndices ? maxIndex - iterations++ : iterations++, $__0) === false) {
-            stopped = true;
-            return false;
-          }
-        }), reverse);
-        return !stopped;
-      }), reverse);
-      return iterations;
-    };
-    return flatSequence;
-  },
-  flatMap: function(mapper, thisArg) {
-    return this.map(mapper, thisArg).flatten();
+    return flattenFactory(this, false);
   },
   skip: function(amount) {
     return skipFactory(this, amount, false);
@@ -811,9 +800,59 @@ var KeyedIndexedSequence = function KeyedIndexedSequence(indexedSeq) {
     return this._seq.has(key);
   },
   __iterate: function(fn, reverse) {
-    return this._seq.__iterate(fn, reverse, reverse);
+    var $__0 = this;
+    return this._seq.__iterate((function(v, k) {
+      return fn(v, k, $__0);
+    }), reverse, reverse);
   }
 }, {}, Sequence);
+var IteratorSequence = function IteratorSequence(iterator) {
+  this._iterator = iterator;
+  this._iteratorCache = [];
+};
+($traceurRuntime.createClass)(IteratorSequence, {__iterateUncached: function(fn, reverse, reverseIndices) {
+    if (reverse) {
+      return this.cacheResult().__iterate(fn, reverse, reverseIndices);
+    }
+    var iterator = this._iterator;
+    var cache = this._iteratorCache;
+    var iterations = 0;
+    while (iterations < cache.length) {
+      if (fn(cache[iterations], iterations++, this) === false) {
+        return iterations;
+      }
+    }
+    var step;
+    while (!(step = iterator.next()).done) {
+      var val = step.value;
+      cache[iterations] = val;
+      if (fn(val, iterations++, this) === false) {
+        break;
+      }
+    }
+    return iterations;
+  }}, {}, IndexedSequence);
+var IterableSequence = function IterableSequence(iterable) {
+  this._iterable = iterable;
+  this.length = iterable.length || iterable.size;
+};
+($traceurRuntime.createClass)(IterableSequence, {__iterateUncached: function(fn, reverse, reverseIndices) {
+    if (reverse) {
+      return this.cacheResult().__iterate(fn, reverse, reverseIndices);
+    }
+    var iterable = this._iterable;
+    var iterator = getIterator(iterable);
+    var iterations = 0;
+    if (isIterator(iterator)) {
+      var step;
+      while (!(step = iterator.next()).done) {
+        if (fn(step.value, iterations++, this) === false) {
+          break;
+        }
+      }
+    }
+    return iterations;
+  }}, {}, IndexedSequence);
 var ObjectSequence = function ObjectSequence(object) {
   var keys = Object.keys(object);
   this._object = object;
@@ -839,8 +878,8 @@ var ObjectSequence = function ObjectSequence(object) {
     var maxIndex = keys.length - 1;
     for (var ii = 0; ii <= maxIndex; ii++) {
       var iteration = reverse ? maxIndex - ii : ii;
-      if (fn(object[keys[iteration]], keys[iteration], object) === false) {
-        break;
+      if (fn(object[keys[iteration]], keys[iteration], this) === false) {
+        return ii + 1;
       }
     }
     return ii;
@@ -864,16 +903,13 @@ var ArraySequence = function ArraySequence(array) {
   __iterate: function(fn, reverse, reverseIndices) {
     var array = this._array;
     var maxIndex = array.length - 1;
-    var ii,
-        rr;
-    var reversedIndices = reverse ^ reverseIndices;
-    for (ii = 0; ii <= maxIndex; ii++) {
-      rr = maxIndex - ii;
-      if (fn(array[reverse ? rr : ii], reverseIndices ? rr : ii, array) === false) {
-        return reversedIndices ? reverse ? rr : ii : array.length;
+    for (var ii = 0; ii <= maxIndex; ii++) {
+      var rr = maxIndex - ii;
+      if (fn(array[reverse ? rr : ii], reverseIndices ? rr : ii, this) === false) {
+        return ii + 1;
       }
     }
-    return array.length;
+    return ii;
   }
 }, {}, IndexedSequence);
 var SequenceIterator = function SequenceIterator() {};
@@ -890,16 +926,6 @@ function makeSequence() {
 }
 function makeIndexedSequence(parent) {
   return Object.create(IndexedSequencePrototype);
-}
-function getInDeepSequence(seq, keyPath, notSetValue, pathOffset) {
-  var nested = seq.get ? seq.get(keyPath[pathOffset], NOT_SET) : NOT_SET;
-  if (nested === NOT_SET) {
-    return notSetValue;
-  }
-  if (++pathOffset === keyPath.length) {
-    return nested;
-  }
-  return getInDeepSequence(nested, keyPath, notSetValue, pathOffset);
 }
 function wholeSlice(begin, end, length) {
   return (begin === 0 || (length != null && begin <= -length)) && (end == null || (length != null && end >= length));
@@ -924,6 +950,21 @@ function returnTrue() {
 }
 function returnThis() {
   return this;
+}
+function reverseFactory(sequence, useKeys) {
+  var reversedSequence = sequence.__makeSequence();
+  reversedSequence.reverse = (function() {
+    return sequence;
+  });
+  reversedSequence.length = sequence.length;
+  reversedSequence.__iterateUncached = function(fn, reverse, reverseIndices) {
+    var $__0 = this;
+    var i = reverseIndices ? this.length : 0;
+    return sequence.__iterate((function(v, k) {
+      return fn(v, useKeys ? k : reverseIndices ? --i : i++, $__0);
+    }), !reverse);
+  };
+  return reversedSequence;
 }
 function filterFactory(sequence, predicate, context, useKeys) {
   var filterSequence = sequence.__makeSequence();
@@ -1002,6 +1043,44 @@ function skipWhileFactory(sequence, predicate, thisArg, useKeys) {
     return iterations;
   };
   return skipSequence;
+}
+function concatFactory(sequence, values, useKeys) {
+  var sequences = [sequence].concat(values);
+  var concatSequence = Sequence(sequences);
+  if (useKeys) {
+    concatSequence = concatSequence.toKeyedSeq();
+  }
+  concatSequence = concatSequence.flatten();
+  concatSequence.length = sequences.reduce((function(sum, seq) {
+    if (sum !== undefined) {
+      var len = Sequence(seq).length;
+      if (len != null) {
+        return sum + len;
+      }
+    }
+  }), 0);
+  return concatSequence;
+}
+function flattenFactory(sequence, useKeys) {
+  var flatSequence = sequence.__makeSequence();
+  flatSequence.__iterateUncached = function(fn, reverse, reverseIndices) {
+    var $__0 = this;
+    var iterations = 0;
+    var len = this.length;
+    sequence.__iterate((function(seq) {
+      var stopped = false;
+      Sequence(seq).__iterate((function(v, k) {
+        iterations++;
+        if (fn(v, useKeys ? k : reverseIndices ? len - iterations : iterations - 1, $__0) === false) {
+          stopped = true;
+          return false;
+        }
+      }), reverse);
+      return !stopped;
+    }), reverse);
+    return iterations;
+  };
+  return flatSequence;
 }
 function not(predicate) {
   return function() {
@@ -1220,16 +1299,11 @@ var $Map = Map;
     return new MapIterator(this, 2, reverse);
   },
   __iterate: function(fn, reverse) {
-    var map = this;
-    if (!map._root) {
-      return 0;
-    }
+    var $__0 = this;
     var iterations = 0;
-    this._root.iterate((function(entry) {
-      if (fn(entry[1], entry[0], map) === false) {
-        return false;
-      }
+    this._root && this._root.iterate((function(entry) {
       iterations++;
+      return fn(entry[1], entry[0], $__0);
     }), reverse);
     return iterations;
   },
@@ -1599,7 +1673,13 @@ function mergeIntoMapWith(map, merger, iterables) {
   var seqs = [];
   for (var ii = 0; ii < iterables.length; ii++) {
     var seq = iterables[ii];
-    seq && seqs.push(Array.isArray(seq) ? Sequence(seq).fromEntrySeq() : Sequence(seq));
+    if (!(seq instanceof Sequence)) {
+      seq = Sequence(seq);
+      if (seq instanceof IndexedSequence) {
+        seq = seq.fromEntrySeq();
+      }
+    }
+    seq && seqs.push(seq);
   }
   return mergeIntoCollectionWith(map, merger, seqs);
 }
@@ -1800,26 +1880,19 @@ var $Vector = Vector;
     return new VectorIterator(this, 2, reverse, reverseIndices);
   },
   __iterate: function(fn, reverse, reverseIndices) {
-    var vector = this;
-    var lastIndex = 0;
-    var maxIndex = vector.length - 1;
-    var flipIndices = reverse && !reverseIndices;
-    var eachFn = (function(value, ii) {
-      if (fn(value, flipIndices ? maxIndex - ii : ii, vector) === false) {
-        return false;
-      } else {
-        lastIndex = ii;
-        return true;
-      }
+    var $__0 = this;
+    var iterations = 0;
+    var len = this.length;
+    var eachFn = (function(v) {
+      return fn(v, reverseIndices ? len - ++iterations : iterations++, $__0);
     });
-    var didComplete;
     var tailOffset = getTailOffset(this._size);
     if (reverse) {
-      didComplete = iterateVNode(this._tail, 0, tailOffset - this._origin, this._size - this._origin, eachFn, reverse) && iterateVNode(this._root, this._level, -this._origin, tailOffset - this._origin, eachFn, reverse);
+      iterateVNode(this._tail, 0, tailOffset - this._origin, this._size - this._origin, eachFn, reverse) && iterateVNode(this._root, this._level, -this._origin, tailOffset - this._origin, eachFn, reverse);
     } else {
-      didComplete = iterateVNode(this._root, this._level, -this._origin, tailOffset - this._origin, eachFn, reverse) && iterateVNode(this._tail, 0, tailOffset - this._origin, this._size - this._origin, eachFn, reverse);
+      iterateVNode(this._root, this._level, -this._origin, tailOffset - this._origin, eachFn, reverse) && iterateVNode(this._tail, 0, tailOffset - this._origin, this._size - this._origin, eachFn, reverse);
     }
-    return (didComplete ? maxIndex : reverse ? maxIndex - lastIndex : lastIndex) + 1;
+    return iterations;
   },
   __deepEquals: function(other) {
     var iterator = this.entries(true);
@@ -1940,14 +2013,13 @@ function iterateVNode(node, level, offset, max, fn, reverse) {
   var ii;
   var array = node && node.array;
   if (level === 0) {
-    var from = offset < 0 ? 0 : offset;
-    var to = offset + SIZE;
-    if (to > max) {
-      to = max;
+    var from = offset < 0 ? -offset : 0;
+    var to = max - offset;
+    if (to > SIZE) {
+      to = SIZE;
     }
     for (ii = from; ii < to; ii++) {
-      var index = reverse ? from + to - 1 - ii : ii;
-      if (fn(array && array[index - offset], index) === false) {
+      if (fn(array && array[reverse ? from + to - 1 - ii : ii]) === false) {
         return false;
       }
     }
@@ -2715,7 +2787,7 @@ var $Range = Range;
     var value = reverse ? this._start + maxIndex * step : this._start;
     for (var ii = 0; ii <= maxIndex; ii++) {
       if (fn(value, reverseIndices ? maxIndex - ii : ii, this) === false) {
-        break;
+        return ii + 1;
       }
       value += reverse ? -step : step;
     }
@@ -2780,7 +2852,7 @@ var $Repeat = Repeat;
     var maxIndex = this.length - 1;
     for (var ii = 0; ii <= maxIndex; ii++) {
       if (fn(this._value, reverseIndices ? maxIndex - ii : ii, this) === false) {
-        break;
+        return ii + 1;
       }
     }
     return ii;
