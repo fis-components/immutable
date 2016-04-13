@@ -270,7 +270,7 @@ var $Sequence = Sequence;
     return this.slice(0, -1);
   },
   has: function(searchKey) {
-    return this.get(searchKey, __SENTINEL) !== __SENTINEL;
+    return this.get(searchKey, SENTINEL) !== SENTINEL;
   },
   get: function(searchKey, notFoundValue) {
     return this.find((function(_, key) {
@@ -286,7 +286,7 @@ var $Sequence = Sequence;
   contains: function(searchValue) {
     return this.find((function(value) {
       return is(value, searchValue);
-    }), null, __SENTINEL) !== __SENTINEL;
+    }), null, SENTINEL) !== SENTINEL;
   },
   find: function(predicate, thisArg, notFoundValue) {
     var foundValue = notFoundValue;
@@ -442,8 +442,8 @@ var $Sequence = Sequence;
     var groups = OrderedMap.empty().withMutations((function(map) {
       seq.forEach((function(value, key, collection) {
         var groupKey = mapper(value, key, collection);
-        var group = map.get(groupKey, __SENTINEL);
-        if (group === __SENTINEL) {
+        var group = map.get(groupKey, SENTINEL);
+        if (group === SENTINEL) {
           group = [];
           map.set(groupKey, group);
         }
@@ -512,11 +512,12 @@ var $Sequence = Sequence;
     }
     return new ArraySequence(value);
   }});
-Sequence.prototype.toJSON = Sequence.prototype.toJS;
-Sequence.prototype.inspect = Sequence.prototype.toSource = function() {
+var SequencePrototype = Sequence.prototype;
+SequencePrototype.toJSON = SequencePrototype.toJS;
+SequencePrototype.__toJS = SequencePrototype.toObject;
+SequencePrototype.inspect = SequencePrototype.toSource = function() {
   return this.toString();
 };
-Sequence.prototype.__toJS = Sequence.prototype.toObject;
 var IndexedSequence = function IndexedSequence() {
   $traceurRuntime.defaultSuperCall(this, $IndexedSequence.prototype, arguments);
 };
@@ -606,7 +607,7 @@ var $IndexedSequence = IndexedSequence;
       return sequence.__iterate(fn, !reverse, flipIndices ^ maintainIndices);
     });
     reversedSequence.reverse = function(_maintainIndices) {
-      return maintainIndices === _maintainIndices ? sequence : $IndexedSequence.prototype.reverse.call(this, _maintainIndices);
+      return maintainIndices === _maintainIndices ? sequence : IndexedSequencePrototype.reverse.call(this, _maintainIndices);
     };
     return reversedSequence;
   },
@@ -730,8 +731,8 @@ var $IndexedSequence = IndexedSequence;
     var groups = OrderedMap.empty().withMutations((function(map) {
       seq.forEach((function(value, index, collection) {
         var groupKey = mapper(value, index, collection);
-        var group = map.get(groupKey, __SENTINEL);
-        if (group === __SENTINEL) {
+        var group = map.get(groupKey, SENTINEL);
+        if (group === SENTINEL) {
           group = new Array(maintainIndices ? seq.length : 0);
           map.set(groupKey, group);
         }
@@ -754,8 +755,9 @@ var $IndexedSequence = IndexedSequence;
     return makeIndexedSequence(this);
   }
 }, {}, Sequence);
-IndexedSequence.prototype.__toJS = IndexedSequence.prototype.toArray;
-IndexedSequence.prototype.__toStringMapper = quoteString;
+var IndexedSequencePrototype = IndexedSequence.prototype;
+IndexedSequencePrototype.__toJS = IndexedSequencePrototype.toArray;
+IndexedSequencePrototype.__toStringMapper = quoteString;
 var ObjectSequence = function ObjectSequence(object) {
   var keys = Object.keys(object);
   this._object = object;
@@ -824,16 +826,16 @@ var ArraySequence = function ArraySequence(array) {
 ArraySequence.prototype.get = ObjectSequence.prototype.get;
 ArraySequence.prototype.has = ObjectSequence.prototype.has;
 function makeSequence() {
-  return Object.create(Sequence.prototype);
+  return Object.create(SequencePrototype);
 }
 function makeIndexedSequence(parent) {
-  var newSequence = Object.create(IndexedSequence.prototype);
+  var newSequence = Object.create(IndexedSequencePrototype);
   newSequence.__reversedIndices = parent ? parent.__reversedIndices : false;
   return newSequence;
 }
 function getInDeepSequence(seq, keyPath, notFoundValue, pathOffset) {
-  var nested = seq.get ? seq.get(keyPath[pathOffset], __SENTINEL) : __SENTINEL;
-  if (nested === __SENTINEL) {
+  var nested = seq.get ? seq.get(keyPath[pathOffset], SENTINEL) : SENTINEL;
+  if (nested === SENTINEL) {
     return notFoundValue;
   }
   if (++pathOffset === keyPath.length) {
@@ -906,11 +908,8 @@ function defaultComparator(a, b) {
   return a > b ? 1 : a < b ? -1 : 0;
 }
 function assertNotInfinite(length) {
-  if (length === Infinity) {
-    throw new Error('Cannot perform this action with an infinite sequence.');
-  }
+  invariant(length !== Infinity, 'Cannot perform this action with an infinite sequence.');
 }
-var __SENTINEL = {};
 function is(first, second) {
   if (first === second) {
     return first !== 0 || second !== 0 || 1 / first === 1 / second;
@@ -923,6 +922,10 @@ function is(first, second) {
   }
   return false;
 }
+function invariant(condition, error) {
+  if (!condition)
+    throw new Error(error);
+}
 var Cursor = function Cursor(rootData, keyPath, onChange) {
   this._rootData = rootData;
   this._keyPath = keyPath;
@@ -930,14 +933,31 @@ var Cursor = function Cursor(rootData, keyPath, onChange) {
 };
 var $Cursor = Cursor;
 ($traceurRuntime.createClass)(Cursor, {
-  get: function() {
-    return this._rootData.getIn(this._keyPath, Map.empty());
+  get: function(optKey, optNotFoundValue) {
+    var deref = this._rootData.getIn(this._keyPath, Map.empty());
+    return optKey ? deref.get(optKey, optNotFoundValue) : deref;
   },
-  update: function(updater) {
-    var newRootData = this._rootData.updateIn(this._keyPath, updater);
-    var onChange = this._onChange;
-    onChange && onChange.call(undefined, newRootData, this._rootData);
-    return new $Cursor(newRootData, this._keyPath, onChange);
+  set: function(key, value) {
+    return _updateCursor(this, (function(m) {
+      return m.set(key, value);
+    }), key);
+  },
+  delete: function(key) {
+    return _updateCursor(this, (function(m) {
+      return m.delete(key);
+    }), key);
+  },
+  update: function(key, updater) {
+    var changeFn;
+    if (typeof key === 'function') {
+      changeFn = key;
+      key = undefined;
+    } else {
+      changeFn = (function(x) {
+        return x.update(key, updater);
+      });
+    }
+    return _updateCursor(this, changeFn, key);
   },
   cursor: function(subKeyPath) {
     if (subKeyPath && !Array.isArray(subKeyPath)) {
@@ -949,6 +969,17 @@ var $Cursor = Cursor;
     return new $Cursor(this._rootData, this._keyPath ? this._keyPath.concat(subKeyPath) : subKeyPath, this._onChange);
   }
 }, {});
+function _updateCursor(cursor, changeFn, changeKey) {
+  var newRootData = cursor._rootData.updateIn(cursor._keyPath, changeFn);
+  var keyPath = cursor._keyPath || [];
+  cursor._onChange && cursor._onChange.call(undefined, newRootData, cursor._rootData, changeKey ? keyPath.concat(changeKey) : keyPath);
+  return new Cursor(newRootData, cursor._keyPath, cursor._onChange);
+}
+var SHIFT = 5;
+var SIZE = 1 << SHIFT;
+var MASK = SIZE - 1;
+var SENTINEL = {};
+function OwnerID() {}
 var Map = function Map(sequence) {
   if (sequence && sequence.constructor === $Map) {
     return sequence;
@@ -988,7 +1019,7 @@ var $Map = Map;
       this._root = newRoot;
       return this;
     }
-    return newRoot === this._root ? this : $Map._make(newLength, newRoot);
+    return newRoot === this._root ? this : makeMap(newLength, newRoot);
   },
   delete: function(k) {
     if (k == null || this._root == null) {
@@ -1001,7 +1032,7 @@ var $Map = Map;
       return this;
     }
     var newRoot = this._root.delete(this.__ownerID, 0, hashValue(k), k);
-    return !newRoot ? $Map.empty() : newRoot === this._root ? this : $Map._make(this.length - 1, newRoot);
+    return !newRoot ? $Map.empty() : newRoot === this._root ? this : makeMap(this.length - 1, newRoot);
   },
   update: function(k, updater) {
     return this.set(k, updater(this.get(k)));
@@ -1059,6 +1090,15 @@ var $Map = Map;
   asImmutable: function() {
     return this.__ensureOwner();
   },
+  __iterate: function(fn, reverse) {
+    return this._root ? this._root.iterate(this, fn, reverse) : 0;
+  },
+  __deepEqual: function(other) {
+    var self = this;
+    return other.every((function(v, k) {
+      return is(self.get(k, SENTINEL), v);
+    }));
+  },
   __ensureOwner: function(ownerID) {
     if (ownerID === this.__ownerID) {
       return this;
@@ -1067,32 +1107,13 @@ var $Map = Map;
       this.__ownerID = ownerID;
       return this;
     }
-    return $Map._make(this.length, this._root, ownerID);
-  },
-  __deepEqual: function(other) {
-    var self = this;
-    return other.every((function(v, k) {
-      return is(self.get(k, __SENTINEL), v);
-    }));
-  },
-  __iterate: function(fn, reverse) {
-    return this._root ? this._root.iterate(this, fn, reverse) : 0;
+    return makeMap(this.length, this._root, ownerID);
   }
-}, {
-  empty: function() {
-    return __EMPTY_MAP || (__EMPTY_MAP = $Map._make(0));
-  },
-  _make: function(length, root, ownerID) {
-    var map = Object.create($Map.prototype);
-    map.length = length;
-    map._root = root;
-    map.__ownerID = ownerID;
-    return map;
-  }
-}, Sequence);
+}, {empty: function() {
+    return EMPTY_MAP || (EMPTY_MAP = makeMap(0));
+  }}, Sequence);
+var MapPrototype = Map.prototype;
 Map.from = Map;
-var OwnerID = function OwnerID() {};
-($traceurRuntime.createClass)(OwnerID, {}, {});
 var BitmapIndexedNode = function BitmapIndexedNode(ownerID, bitmap, keys, values) {
   this.ownerID = ownerID;
   this.bitmap = bitmap;
@@ -1276,6 +1297,18 @@ var $HashCollisionNode = HashCollisionNode;
     return true;
   }
 }, {});
+var BOOL_REF = {value: false};
+function BoolRef(value) {
+  BOOL_REF.value = value;
+  return BOOL_REF;
+}
+function makeMap(length, root, ownerID) {
+  var map = Object.create(MapPrototype);
+  map.length = length;
+  map._root = root;
+  map.__ownerID = ownerID;
+  return map;
+}
 function makeNode(ownerID, shift, hash, key, valOrNode) {
   var idx = (hash >>> shift) & MASK;
   var keys = [];
@@ -1284,45 +1317,43 @@ function makeNode(ownerID, shift, hash, key, valOrNode) {
   key != null && (keys[idx] = key);
   return new BitmapIndexedNode(ownerID, 1 << idx, keys, values);
 }
+function mergeIntoMapWith(map, merger, iterables) {
+  var seqs = [];
+  for (var ii = 0; ii < iterables.length; ii++) {
+    var seq = iterables[ii];
+    seq && seqs.push(Array.isArray(seq) ? Sequence(seq).fromEntries() : Sequence(seq));
+  }
+  return mergeIntoCollectionWith(map, merger, seqs);
+}
 function deepMerger(merger) {
   return (function(existing, value) {
     return existing && existing.mergeDeepWith ? existing.mergeDeepWith(merger, value) : merger ? merger(existing, value) : value;
   });
 }
-function mergeIntoMapWith(map, merger, seqs) {
+function mergeIntoCollectionWith(collection, merger, seqs) {
   if (seqs.length === 0) {
-    return map;
+    return collection;
   }
-  return map.withMutations((function(map) {
+  return collection.withMutations((function(collection) {
+    var mergeIntoMap = merger ? (function(value, key) {
+      var existing = collection.get(key, SENTINEL);
+      collection.set(key, existing === SENTINEL ? value : merger(existing, value));
+    }) : (function(value, key) {
+      collection.set(key, value);
+    });
     for (var ii = 0; ii < seqs.length; ii++) {
-      var seq = seqs[ii];
-      if (seq) {
-        seq = seq.forEach ? seq : Sequence(seq);
-        seq.forEach(merger ? (function(value, key) {
-          var existing = map.get(key, __SENTINEL);
-          map.set(key, existing === __SENTINEL ? value : merger(existing, value));
-        }) : (function(value, key) {
-          map.set(key, value);
-        }));
-      }
+      seqs[ii].forEach(mergeIntoMap);
     }
   }));
 }
 function updateInDeepMap(collection, keyPath, updater, pathOffset) {
   var key = keyPath[pathOffset];
-  var nested = collection.get ? collection.get(key, __SENTINEL) : __SENTINEL;
-  if (nested === __SENTINEL) {
+  var nested = collection.get ? collection.get(key, SENTINEL) : SENTINEL;
+  if (nested === SENTINEL) {
     nested = Map.empty();
   }
-  if (!collection.set) {
-    throw new Error('updateIn with invalid keyPath');
-  }
+  invariant(collection.set, 'updateIn with invalid keyPath');
   return collection.set(key, ++pathOffset === keyPath.length ? updater(nested) : updateInDeepMap(nested, keyPath, updater, pathOffset));
-}
-var __BOOL_REF = {value: false};
-function BoolRef(value) {
-  __BOOL_REF.value = value;
-  return __BOOL_REF;
 }
 function hashValue(o) {
   if (!o) {
@@ -1341,7 +1372,7 @@ function hashValue(o) {
   if (type === 'string') {
     return hashString(o);
   }
-  throw new Error('Unable to hash');
+  throw new Error('Unable to hash: ' + o);
 }
 function hashString(string) {
   var hash = STRING_HASH_CACHE[string];
@@ -1363,11 +1394,7 @@ var STRING_HASH_MAX_VAL = 0x100000000;
 var STRING_HASH_CACHE_MAX_SIZE = 255;
 var STRING_HASH_CACHE_SIZE = 0;
 var STRING_HASH_CACHE = {};
-var SHIFT = 5;
-var SIZE = 1 << SHIFT;
-var MASK = SIZE - 1;
-var __SENTINEL = {};
-var __EMPTY_MAP;
+var EMPTY_MAP;
 var Vector = function Vector() {
   for (var values = [],
       $__6 = 0; $__6 < arguments.length; $__6++)
@@ -1384,7 +1411,7 @@ var $Vector = Vector;
     if (index >= this._size) {
       return undefinedValue;
     }
-    var node = this._nodeFor(index);
+    var node = vectorNodeFor(this, index);
     var maskedIndex = index & MASK;
     return node && (undefinedValue === undefined || node.array.hasOwnProperty(maskedIndex)) ? node.array[maskedIndex] : undefinedValue;
   },
@@ -1398,10 +1425,10 @@ var $Vector = Vector;
     var tailOffset = getTailOffset(this._size);
     if (index >= this.length) {
       return this.withMutations((function(vect) {
-        return vect._setBounds(0, index + 1).set(index, value);
+        return setVectorBounds(vect, 0, index + 1).set(index, value);
       }));
     }
-    if (this.get(index, __SENTINEL) === value) {
+    if (this.get(index, SENTINEL) === value) {
       return this;
     }
     index = rawIndex(index, this._origin);
@@ -1415,7 +1442,7 @@ var $Vector = Vector;
         this._tail = newTail;
         return this;
       }
-      return $Vector._make(this._origin, newSize, this._level, this._root, newTail);
+      return makeVector(this._origin, newSize, this._level, this._root, newTail);
     }
     var newRoot = this._root.ensureOwner(this.__ownerID);
     var node = newRoot;
@@ -1428,7 +1455,7 @@ var $Vector = Vector;
       this._root = newRoot;
       return this;
     }
-    return $Vector._make(this._origin, this._size, this._level, newRoot, this._tail);
+    return makeVector(this._origin, this._size, this._level, newRoot, this._tail);
   },
   delete: function(index) {
     if (!this.has(index)) {
@@ -1443,7 +1470,7 @@ var $Vector = Vector;
         this._tail = newTail;
         return this;
       }
-      return $Vector._make(this._origin, this._size, this._level, this._root, newTail);
+      return makeVector(this._origin, this._size, this._level, this._root, newTail);
     }
     var newRoot = this._root.ensureOwner(this.__ownerID);
     var node = newRoot;
@@ -1456,13 +1483,13 @@ var $Vector = Vector;
       this._root = newRoot;
       return this;
     }
-    return $Vector._make(this._origin, this._size, this._level, newRoot, this._tail);
+    return makeVector(this._origin, this._size, this._level, newRoot, this._tail);
   },
   clear: function() {
     if (this.__ownerID) {
       this.length = this._origin = this._size = 0;
       this._level = SHIFT;
-      this._root = this._tail = __EMPTY_VNODE;
+      this._root = this._tail = EMPTY_VNODE;
       return this;
     }
     return $Vector.empty();
@@ -1471,153 +1498,47 @@ var $Vector = Vector;
     var values = arguments;
     var oldLength = this.length;
     return this.withMutations((function(vect) {
-      vect._setBounds(0, oldLength + values.length);
+      setVectorBounds(vect, 0, oldLength + values.length);
       for (var ii = 0; ii < values.length; ii++) {
         vect.set(oldLength + ii, values[ii]);
       }
     }));
   },
   pop: function() {
-    return this._setBounds(0, -1);
+    return setVectorBounds(this, 0, -1);
   },
   unshift: function() {
     var values = arguments;
     return this.withMutations((function(vect) {
-      vect._setBounds(-values.length);
+      setVectorBounds(vect, -values.length);
       for (var ii = 0; ii < values.length; ii++) {
         vect.set(ii, values[ii]);
       }
     }));
   },
   shift: function() {
-    return this._setBounds(1);
+    return setVectorBounds(this, 1);
   },
   merge: function() {
-    for (var seqs = [],
-        $__7 = 0; $__7 < arguments.length; $__7++)
-      seqs[$__7] = arguments[$__7];
-    return Map.prototype.merge.apply(vectorWithLengthOfLongestSeq(this, seqs), arguments);
+    return mergeIntoVectorWith(this, null, arguments);
   },
-  mergeWith: function(fn) {
+  mergeWith: function(merger) {
+    for (var seqs = [],
+        $__7 = 1; $__7 < arguments.length; $__7++)
+      seqs[$__7 - 1] = arguments[$__7];
+    return mergeIntoVectorWith(this, merger, seqs);
+  },
+  mergeDeep: function() {
+    return mergeIntoVectorWith(this, deepMerger(null), arguments);
+  },
+  mergeDeepWith: function(merger) {
     for (var seqs = [],
         $__8 = 1; $__8 < arguments.length; $__8++)
       seqs[$__8 - 1] = arguments[$__8];
-    return Map.prototype.mergeWith.apply(vectorWithLengthOfLongestSeq(this, seqs), arguments);
-  },
-  mergeDeep: function() {
-    for (var seqs = [],
-        $__9 = 0; $__9 < arguments.length; $__9++)
-      seqs[$__9] = arguments[$__9];
-    return Map.prototype.mergeDeep.apply(vectorWithLengthOfLongestSeq(this, seqs), arguments);
-  },
-  mergeDeepWith: function(fn) {
-    for (var seqs = [],
-        $__10 = 1; $__10 < arguments.length; $__10++)
-      seqs[$__10 - 1] = arguments[$__10];
-    return Map.prototype.mergeDeepWith.apply(vectorWithLengthOfLongestSeq(this, seqs), arguments);
+    return mergeIntoVectorWith(this, deepMerger(merger), seqs);
   },
   setLength: function(length) {
-    return this._setBounds(0, length);
-  },
-  _setBounds: function(begin, end) {
-    var owner = this.__ownerID || new OwnerID();
-    var oldOrigin = this._origin;
-    var oldSize = this._size;
-    var newOrigin = oldOrigin + begin;
-    var newSize = end == null ? oldSize : end < 0 ? oldSize + end : oldOrigin + end;
-    if (newOrigin === oldOrigin && newSize === oldSize) {
-      return this;
-    }
-    if (newOrigin >= newSize) {
-      return this.clear();
-    }
-    var newLevel = this._level;
-    var newRoot = this._root;
-    var offsetShift = 0;
-    while (newOrigin + offsetShift < 0) {
-      newRoot = new VNode(newRoot.array.length ? [, newRoot] : [], owner);
-      newLevel += SHIFT;
-      offsetShift += 1 << newLevel;
-    }
-    if (offsetShift) {
-      newOrigin += offsetShift;
-      oldOrigin += offsetShift;
-      newSize += offsetShift;
-      oldSize += offsetShift;
-    }
-    var oldTailOffset = getTailOffset(oldSize);
-    var newTailOffset = getTailOffset(newSize);
-    while (newTailOffset >= 1 << (newLevel + SHIFT)) {
-      newRoot = new VNode(newRoot.array.length ? [newRoot] : [], owner);
-      newLevel += SHIFT;
-    }
-    var oldTail = this._tail;
-    var newTail = newTailOffset < oldTailOffset ? this._nodeFor(newSize) : newTailOffset > oldTailOffset ? new VNode([], owner) : oldTail;
-    if (newTailOffset > oldTailOffset && newOrigin < oldSize && oldTail.array.length) {
-      newRoot = newRoot.ensureOwner(owner);
-      var node = newRoot;
-      for (var level = newLevel; level > SHIFT; level -= SHIFT) {
-        var idx = (oldTailOffset >>> level) & MASK;
-        node = node.array[idx] = node.array[idx] ? node.array[idx].ensureOwner(owner) : new VNode([], owner);
-      }
-      node.array[(oldTailOffset >>> SHIFT) & MASK] = oldTail;
-    }
-    if (newSize < oldSize) {
-      newTail = newTail.removeAfter(owner, 0, newSize);
-    }
-    if (newOrigin >= newTailOffset) {
-      newOrigin -= newTailOffset;
-      newSize -= newTailOffset;
-      newLevel = SHIFT;
-      newRoot = __EMPTY_VNODE;
-      newTail = newTail.removeBefore(owner, 0, newOrigin);
-    } else if (newOrigin > oldOrigin || newTailOffset < oldTailOffset) {
-      var beginIndex,
-          endIndex;
-      offsetShift = 0;
-      do {
-        beginIndex = ((newOrigin) >>> newLevel) & MASK;
-        endIndex = ((newTailOffset - 1) >>> newLevel) & MASK;
-        if (beginIndex === endIndex) {
-          if (beginIndex) {
-            offsetShift += (1 << newLevel) * beginIndex;
-          }
-          newLevel -= SHIFT;
-          newRoot = newRoot && newRoot.array[beginIndex];
-        }
-      } while (newRoot && beginIndex === endIndex);
-      if (newRoot && newOrigin > oldOrigin) {
-        newRoot = newRoot.removeBefore(owner, newLevel, newOrigin - offsetShift);
-      }
-      if (newRoot && newTailOffset < oldTailOffset) {
-        newRoot = newRoot.removeAfter(owner, newLevel, newTailOffset - offsetShift);
-      }
-      if (offsetShift) {
-        newOrigin -= offsetShift;
-        newSize -= offsetShift;
-      }
-      newRoot = newRoot || __EMPTY_VNODE;
-    }
-    if (this.__ownerID) {
-      this.length = newSize - newOrigin;
-      this._origin = newOrigin;
-      this._size = newSize;
-      this._level = newLevel;
-      this._root = newRoot;
-      this._tail = newTail;
-      return this;
-    }
-    return $Vector._make(newOrigin, newSize, newLevel, newRoot, newTail);
-  },
-  __ensureOwner: function(ownerID) {
-    if (ownerID === this.__ownerID) {
-      return this;
-    }
-    if (!ownerID) {
-      this.__ownerID = ownerID;
-      return this;
-    }
-    return $Vector._make(this._origin, this._size, this._level, this._root, this._tail, ownerID);
+    return setVectorBounds(this, 0, length);
   },
   slice: function(begin, end, maintainIndices) {
     var sliceSequence = $traceurRuntime.superCall(this, $Vector.prototype, "slice", [begin, end, maintainIndices]);
@@ -1625,19 +1546,12 @@ var $Vector = Vector;
       var vector = this;
       var length = vector.length;
       sliceSequence.toVector = (function() {
-        return vector._setBounds(begin < 0 ? Math.max(0, length + begin) : length ? Math.min(length, begin) : begin, end == null ? length : end < 0 ? Math.max(0, length + end) : length ? Math.min(length, end) : end);
+        return setVectorBounds(vector, begin < 0 ? Math.max(0, length + begin) : length ? Math.min(length, begin) : begin, end == null ? length : end < 0 ? Math.max(0, length + end) : length ? Math.min(length, end) : end);
       });
     }
     return sliceSequence;
   },
-  __deepEquals: function(other) {
-    var iterator = this.__iterator__();
-    return other.every((function(v, k) {
-      var entry = iterator.next();
-      return k === entry[0] && is(v, entry[1]);
-    }));
-  },
-  __iterator__: function() {
+  iterator: function() {
     return new VectorIterator(this, this._origin, this._size, this._level, this._root, this._tail);
   },
   __iterate: function(fn, reverse, flipIndices) {
@@ -1662,23 +1576,26 @@ var $Vector = Vector;
     }
     return (didComplete ? maxIndex : reverse ? maxIndex - lastIndex : lastIndex) + 1;
   },
-  _nodeFor: function(rawIndex) {
-    if (rawIndex >= getTailOffset(this._size)) {
-      return this._tail;
+  __deepEquals: function(other) {
+    var iterator = this.iterator();
+    return other.every((function(v, k) {
+      var entry = iterator.next().value;
+      return entry && k === entry[0] && is(v, entry[1]);
+    }));
+  },
+  __ensureOwner: function(ownerID) {
+    if (ownerID === this.__ownerID) {
+      return this;
     }
-    if (rawIndex < 1 << (this._level + SHIFT)) {
-      var node = this._root;
-      var level = this._level;
-      while (node && level > 0) {
-        node = node.array[(rawIndex >>> level) & MASK];
-        level -= SHIFT;
-      }
-      return node;
+    if (!ownerID) {
+      this.__ownerID = ownerID;
+      return this;
     }
+    return makeVector(this._origin, this._size, this._level, this._root, this._tail, ownerID);
   }
 }, {
   empty: function() {
-    return __EMPTY_VECT || (__EMPTY_VECT = $Vector._make(0, 0, SHIFT, __EMPTY_VNODE, __EMPTY_VNODE));
+    return EMPTY_VECT || (EMPTY_VECT = makeVector(0, 0, SHIFT, EMPTY_VNODE, EMPTY_VNODE));
   },
   from: function(sequence) {
     if (sequence && sequence.constructor === $Vector) {
@@ -1689,7 +1606,7 @@ var $Vector = Vector;
     }
     var isArray = Array.isArray(sequence);
     if (sequence.length > 0 && sequence.length < SIZE) {
-      return $Vector._make(0, sequence.length, SHIFT, __EMPTY_VNODE, new VNode(isArray ? sequence.slice() : Sequence(sequence).toArray()));
+      return makeVector(0, sequence.length, SHIFT, EMPTY_VNODE, new VNode(isArray ? sequence.slice() : Sequence(sequence).toArray()));
     }
     if (!isArray) {
       sequence = Sequence(sequence);
@@ -1698,27 +1615,16 @@ var $Vector = Vector;
       }
     }
     return $Vector.empty().merge(sequence);
-  },
-  _make: function(origin, size, level, root, tail, ownerID) {
-    var vect = Object.create($Vector.prototype);
-    vect.length = size - origin;
-    vect._origin = origin;
-    vect._size = size;
-    vect._level = level;
-    vect._root = root;
-    vect._tail = tail;
-    vect.__ownerID = ownerID;
-    return vect;
   }
 }, IndexedSequence);
-Vector.prototype.update = Map.prototype.update;
-Vector.prototype.updateIn = Map.prototype.updateIn;
-Vector.prototype.cursor = Map.prototype.cursor;
-Vector.prototype.withMutations = Map.prototype.withMutations;
-Vector.prototype.asMutable = Map.prototype.asMutable;
-Vector.prototype.asImmutable = Map.prototype.asImmutable;
-var OwnerID = function OwnerID() {};
-($traceurRuntime.createClass)(OwnerID, {}, {});
+var VectorPrototype = Vector.prototype;
+VectorPrototype['@@iterator'] = VectorPrototype.__iterator__;
+VectorPrototype.update = MapPrototype.update;
+VectorPrototype.updateIn = MapPrototype.updateIn;
+VectorPrototype.cursor = MapPrototype.cursor;
+VectorPrototype.withMutations = MapPrototype.withMutations;
+VectorPrototype.asMutable = MapPrototype.asMutable;
+VectorPrototype.asImmutable = MapPrototype.asImmutable;
 var VNode = function VNode(array, ownerID) {
   this.array = array;
   this.ownerID = ownerID;
@@ -1732,7 +1638,7 @@ var $VNode = VNode;
     return new $VNode(this.array.slice(), ownerID);
   },
   removeBefore: function(ownerID, level, index) {
-    if (index === 1 << level || this.array.length === 0) {
+    if (index === level ? 1 << level : 0 || this.array.length === 0) {
       return this;
     }
     var originIndex = (index >>> level) & MASK;
@@ -1763,7 +1669,7 @@ var $VNode = VNode;
     return editable;
   },
   removeAfter: function(ownerID, level, index) {
-    if (index === 1 << level || this.array.length === 0) {
+    if (index === level ? 1 << level : 0 || this.array.length === 0) {
       return this;
     }
     var sizeIndex = ((index - 1) >>> level) & MASK;
@@ -1853,7 +1759,10 @@ var VectorIterator = function VectorIterator(vector, origin, size, level, root, 
           if (index >= 0 && index < stack.max && stack.node.hasOwnProperty(stack.rawIndex)) {
             var value = stack.node[stack.rawIndex];
             stack.rawIndex++;
-            return [index, value];
+            return {
+              value: [index, value],
+              done: true
+            };
           } else {
             stack.rawIndex++;
           }
@@ -1881,34 +1790,150 @@ var VectorIterator = function VectorIterator(vector, origin, size, level, root, 
       }
       stack = this._stack = this._stack.__prev;
     }
-    if (window.StopIteration) {
-      throw window.StopIteration;
-    }
+    return {done: true};
   }}, {});
-function vectorWithLengthOfLongestSeq(vector, seqs) {
-  var maxLength = Math.max.apply(null, seqs.map((function(seq) {
-    return seq.length || 0;
+function makeVector(origin, size, level, root, tail, ownerID) {
+  var vect = Object.create(VectorPrototype);
+  vect.length = size - origin;
+  vect._origin = origin;
+  vect._size = size;
+  vect._level = level;
+  vect._root = root;
+  vect._tail = tail;
+  vect.__ownerID = ownerID;
+  return vect;
+}
+function vectorNodeFor(vector, rawIndex) {
+  if (rawIndex >= getTailOffset(vector._size)) {
+    return vector._tail;
+  }
+  if (rawIndex < 1 << (vector._level + SHIFT)) {
+    var node = vector._root;
+    var level = vector._level;
+    while (node && level > 0) {
+      node = node.array[(rawIndex >>> level) & MASK];
+      level -= SHIFT;
+    }
+    return node;
+  }
+}
+function setVectorBounds(vector, begin, end) {
+  var owner = vector.__ownerID || new OwnerID();
+  var oldOrigin = vector._origin;
+  var oldSize = vector._size;
+  var newOrigin = oldOrigin + begin;
+  var newSize = end == null ? oldSize : end < 0 ? oldSize + end : oldOrigin + end;
+  if (newOrigin === oldOrigin && newSize === oldSize) {
+    return vector;
+  }
+  if (newOrigin >= newSize) {
+    return vector.clear();
+  }
+  var newLevel = vector._level;
+  var newRoot = vector._root;
+  var offsetShift = 0;
+  while (newOrigin + offsetShift < 0) {
+    newRoot = new VNode(newRoot.array.length ? [, newRoot] : [], owner);
+    newLevel += SHIFT;
+    offsetShift += 1 << newLevel;
+  }
+  if (offsetShift) {
+    newOrigin += offsetShift;
+    oldOrigin += offsetShift;
+    newSize += offsetShift;
+    oldSize += offsetShift;
+  }
+  var oldTailOffset = getTailOffset(oldSize);
+  var newTailOffset = getTailOffset(newSize);
+  while (newTailOffset >= 1 << (newLevel + SHIFT)) {
+    newRoot = new VNode(newRoot.array.length ? [newRoot] : [], owner);
+    newLevel += SHIFT;
+  }
+  var oldTail = vector._tail;
+  var newTail = newTailOffset < oldTailOffset ? vectorNodeFor(vector, newSize - 1) : newTailOffset > oldTailOffset ? new VNode([], owner) : oldTail;
+  if (newTailOffset > oldTailOffset && newOrigin < oldSize && oldTail.array.length) {
+    newRoot = newRoot.ensureOwner(owner);
+    var node = newRoot;
+    for (var level = newLevel; level > SHIFT; level -= SHIFT) {
+      var idx = (oldTailOffset >>> level) & MASK;
+      node = node.array[idx] = node.array[idx] ? node.array[idx].ensureOwner(owner) : new VNode([], owner);
+    }
+    node.array[(oldTailOffset >>> SHIFT) & MASK] = oldTail;
+  }
+  if (newSize < oldSize) {
+    newTail = newTail.removeAfter(owner, 0, newSize);
+  }
+  if (newOrigin >= newTailOffset) {
+    newOrigin -= newTailOffset;
+    newSize -= newTailOffset;
+    newLevel = SHIFT;
+    newRoot = EMPTY_VNODE;
+    newTail = newTail.removeBefore(owner, 0, newOrigin);
+  } else if (newOrigin > oldOrigin || newTailOffset < oldTailOffset) {
+    var beginIndex,
+        endIndex;
+    offsetShift = 0;
+    do {
+      beginIndex = ((newOrigin) >>> newLevel) & MASK;
+      endIndex = ((newTailOffset - 1) >>> newLevel) & MASK;
+      if (beginIndex === endIndex) {
+        if (beginIndex) {
+          offsetShift += (1 << newLevel) * beginIndex;
+        }
+        newLevel -= SHIFT;
+        newRoot = newRoot && newRoot.array[beginIndex];
+      }
+    } while (newRoot && beginIndex === endIndex);
+    if (newRoot && newOrigin > oldOrigin) {
+      newRoot = newRoot.removeBefore(owner, newLevel, newOrigin - offsetShift);
+    }
+    if (newRoot && newTailOffset < oldTailOffset) {
+      newRoot = newRoot.removeAfter(owner, newLevel, newTailOffset - offsetShift);
+    }
+    if (offsetShift) {
+      newOrigin -= offsetShift;
+      newSize -= offsetShift;
+    }
+    newRoot = newRoot || EMPTY_VNODE;
+  }
+  if (vector.__ownerID) {
+    vector.length = newSize - newOrigin;
+    vector._origin = newOrigin;
+    vector._size = newSize;
+    vector._level = newLevel;
+    vector._root = newRoot;
+    vector._tail = newTail;
+    return vector;
+  }
+  return makeVector(newOrigin, newSize, newLevel, newRoot, newTail);
+}
+function mergeIntoVectorWith(vector, merger, iterables) {
+  var seqs = [];
+  for (var ii = 0; ii < iterables.length; ii++) {
+    var seq = iterables[ii];
+    seq && seqs.push(seq.forEach ? seq : Sequence(seq));
+  }
+  var maxLength = Math.max.apply(null, seqs.map((function(s) {
+    return s.length || 0;
   })));
-  return maxLength > vector.length ? vector.setLength(maxLength) : vector;
+  if (maxLength > vector.length) {
+    vector = vector.setLength(maxLength);
+  }
+  return mergeIntoCollectionWith(vector, merger, seqs);
 }
 function rawIndex(index, origin) {
-  if (index < 0)
-    throw new Error('Index out of bounds');
+  invariant(index >= 0, 'Index out of bounds');
   return index + origin;
 }
 function getTailOffset(size) {
   return size < SIZE ? 0 : (((size - 1) >>> SHIFT) << SHIFT);
 }
-var SHIFT = 5;
-var SIZE = 1 << SHIFT;
-var MASK = SIZE - 1;
-var __SENTINEL = {};
-var __EMPTY_VECT;
-var __EMPTY_VNODE = new VNode([]);
+var EMPTY_VECT;
+var EMPTY_VNODE = new VNode([]);
 var Set = function Set() {
   for (var values = [],
-      $__11 = 0; $__11 < arguments.length; $__11++)
-    values[$__11] = arguments[$__11];
+      $__9 = 0; $__9 < arguments.length; $__9++)
+    values[$__9] = arguments[$__9];
   return $Set.from(values);
 };
 var $Set = Set;
@@ -1936,7 +1961,7 @@ var $Set = Set;
       this._map = newMap;
       return this;
     }
-    return newMap === this._map ? this : $Set._make(newMap);
+    return newMap === this._map ? this : makeSet(newMap);
   },
   delete: function(value) {
     if (value == null || this._map == null) {
@@ -1951,7 +1976,7 @@ var $Set = Set;
       this._map = newMap;
       return this;
     }
-    return newMap === this._map ? this : $Set._make(newMap);
+    return newMap === this._map ? this : makeSet(newMap);
   },
   clear: function() {
     if (this.__ownerID) {
@@ -1978,8 +2003,8 @@ var $Set = Set;
   },
   intersect: function() {
     for (var seqs = [],
-        $__12 = 0; $__12 < arguments.length; $__12++)
-      seqs[$__12] = arguments[$__12];
+        $__10 = 0; $__10 < arguments.length; $__10++)
+      seqs[$__10] = arguments[$__10];
     if (seqs.length === 0) {
       return this;
     }
@@ -1999,8 +2024,8 @@ var $Set = Set;
   },
   subtract: function() {
     for (var seqs = [],
-        $__13 = 0; $__13 < arguments.length; $__13++)
-      seqs[$__13] = arguments[$__13];
+        $__11 = 0; $__11 < arguments.length; $__11++)
+      seqs[$__11] = arguments[$__11];
     if (seqs.length === 0) {
       return this;
     }
@@ -2031,6 +2056,15 @@ var $Set = Set;
       return set.contains(value);
     }));
   },
+  __iterate: function(fn, reverse) {
+    var collection = this;
+    return this._map ? this._map.__iterate((function(_, k) {
+      return fn(k, k, collection);
+    }), reverse) : 0;
+  },
+  __deepEquals: function(other) {
+    return !(this._map || other._map) || this._map.equals(other._map);
+  },
   __ensureOwner: function(ownerID) {
     if (ownerID === this.__ownerID) {
       return this;
@@ -2041,20 +2075,11 @@ var $Set = Set;
       this._map = newMap;
       return this;
     }
-    return $Set._make(newMap, ownerID);
-  },
-  __deepEquals: function(other) {
-    return !(this._map || other._map) || this._map.equals(other._map);
-  },
-  __iterate: function(fn, reverse) {
-    var collection = this;
-    return this._map ? this._map.__iterate((function(_, k) {
-      return fn(k, k, collection);
-    }), reverse) : 0;
+    return makeSet(newMap, ownerID);
   }
 }, {
   empty: function() {
-    return __EMPTY_SET || (__EMPTY_SET = $Set._make());
+    return EMPTY_SET || (EMPTY_SET = makeSet());
   },
   from: function(sequence) {
     if (sequence && sequence.constructor === $Set) {
@@ -2067,22 +2092,23 @@ var $Set = Set;
   },
   fromKeys: function(sequence) {
     return $Set.from(Sequence(sequence).flip());
-  },
-  _make: function(map, ownerID) {
-    var set = Object.create($Set.prototype);
-    set.length = map ? map.length : 0;
-    set._map = map;
-    set.__ownerID = ownerID;
-    return set;
   }
 }, Sequence);
-Set.prototype.contains = Set.prototype.has;
-Set.prototype.withMutations = Map.prototype.withMutations;
-Set.prototype.asMutable = Map.prototype.asMutable;
-Set.prototype.asImmutable = Map.prototype.asImmutable;
-Set.prototype.__toJS = IndexedSequence.prototype.__toJS;
-Set.prototype.__toStringMapper = IndexedSequence.prototype.__toStringMapper;
-var __EMPTY_SET;
+var SetPrototype = Set.prototype;
+SetPrototype.contains = SetPrototype.has;
+SetPrototype.withMutations = Map.prototype.withMutations;
+SetPrototype.asMutable = Map.prototype.asMutable;
+SetPrototype.asImmutable = Map.prototype.asImmutable;
+SetPrototype.__toJS = IndexedSequence.prototype.__toJS;
+SetPrototype.__toStringMapper = IndexedSequence.prototype.__toStringMapper;
+function makeSet(map, ownerID) {
+  var set = Object.create(SetPrototype);
+  set.length = map ? map.length : 0;
+  set._map = map;
+  set.__ownerID = ownerID;
+  return set;
+}
+var EMPTY_SET;
 var OrderedMap = function OrderedMap(sequence) {
   if (sequence && sequence.constructor === $OrderedMap) {
     return sequence;
@@ -2138,7 +2164,7 @@ var $OrderedMap = OrderedMap;
       this._vector = newVector;
       return this;
     }
-    return newVector === this._vector ? this : $OrderedMap._make(newMap, newVector);
+    return newVector === this._vector ? this : makeOrderedMap(newMap, newVector);
   },
   delete: function(k) {
     if (k == null || this._map == null) {
@@ -2159,7 +2185,18 @@ var $OrderedMap = OrderedMap;
       this._vector = newVector;
       return this;
     }
-    return newMap === this._map ? this : $OrderedMap._make(newMap, newVector);
+    return newMap === this._map ? this : makeOrderedMap(newMap, newVector);
+  },
+  __iterate: function(fn, reverse) {
+    return this._vector ? this._vector.fromEntries().__iterate(fn, reverse) : 0;
+  },
+  __deepEqual: function(other) {
+    var iterator = this._vector.__iterator__();
+    return other.every((function(v, k) {
+      var entry = iterator.next();
+      entry && (entry = entry[1]);
+      return entry && is(k, entry[0]) && is(v, entry[1]);
+    }));
   },
   __ensureOwner: function(ownerID) {
     if (ownerID === this.__ownerID) {
@@ -2173,43 +2210,30 @@ var $OrderedMap = OrderedMap;
       this._vector = newVector;
       return this;
     }
-    return $OrderedMap._make(newMap, newVector, ownerID);
-  },
-  __deepEqual: function(other) {
-    var iterator = this._vector.__iterator__();
-    return other.every((function(v, k) {
-      var entry = iterator.next();
-      entry && (entry = entry[1]);
-      return entry && is(k, entry[0]) && is(v, entry[1]);
-    }));
-  },
-  __iterate: function(fn, reverse) {
-    return this._vector ? this._vector.fromEntries().__iterate(fn, reverse) : 0;
+    return makeOrderedMap(newMap, newVector, ownerID);
   }
-}, {
-  empty: function() {
-    return __EMPTY_ORDERED_MAP || (__EMPTY_ORDERED_MAP = $OrderedMap._make());
-  },
-  _make: function(map, vector, ownerID) {
-    var omap = Object.create($OrderedMap.prototype);
-    omap.length = map ? map.length : 0;
-    omap._map = map;
-    omap._vector = vector;
-    omap.__ownerID = ownerID;
-    return omap;
-  }
-}, Map);
+}, {empty: function() {
+    return EMPTY_ORDERED_MAP || (EMPTY_ORDERED_MAP = makeOrderedMap());
+  }}, Map);
 OrderedMap.from = OrderedMap;
-var __EMPTY_ORDERED_MAP;
+function makeOrderedMap(map, vector, ownerID) {
+  var omap = Object.create(OrderedMap.prototype);
+  omap.length = map ? map.length : 0;
+  omap._map = map;
+  omap._vector = vector;
+  omap.__ownerID = ownerID;
+  return omap;
+}
+var EMPTY_ORDERED_MAP;
 var Record = function Record(defaultValues, name) {
   var RecordType = function(values) {
     this._map = Map(values);
   };
   defaultValues = Sequence(defaultValues);
-  RecordType.prototype = Object.create($Record.prototype);
-  RecordType.prototype.constructor = RecordType;
-  RecordType.prototype._name = name;
-  RecordType.prototype._defaultValues = defaultValues;
+  var RecordTypePrototype = RecordType.prototype = Object.create(RecordPrototype);
+  RecordTypePrototype.constructor = RecordType;
+  RecordTypePrototype._name = name;
+  RecordTypePrototype._defaultValues = defaultValues;
   var keys = Object.keys(defaultValues);
   RecordType.prototype.length = keys.length;
   if (Object.defineProperty) {
@@ -2219,9 +2243,7 @@ var Record = function Record(defaultValues, name) {
           return this.get(key);
         },
         set: function(value) {
-          if (!this.__ownerID) {
-            throw new Error('Cannot set on an immutable record.');
-          }
+          invariant(this.__ownerID, 'Cannot set on an immutable record.');
           this.set(key, value);
         }
       });
@@ -2248,7 +2270,8 @@ var $Record = Record;
       this._map.clear();
       return this;
     }
-    return this._empty();
+    var Record = Object.getPrototypeOf(this).constructor;
+    return $Record._empty || ($Record._empty = makeRecord(this, Map.empty()));
   },
   set: function(k, v) {
     if (k == null || !this.has(k)) {
@@ -2258,7 +2281,7 @@ var $Record = Record;
     if (this.__ownerID || newMap === this._map) {
       return this;
     }
-    return this._make(newMap);
+    return makeRecord(this, newMap);
   },
   delete: function(k) {
     if (k == null || !this.has(k)) {
@@ -2268,7 +2291,13 @@ var $Record = Record;
     if (this.__ownerID || newMap === this._map) {
       return this;
     }
-    return this._make(newMap);
+    return makeRecord(this, newMap);
+  },
+  __iterate: function(fn, reverse) {
+    var record = this;
+    return this._defaultValues.map((function(_, k) {
+      return record.get(k);
+    })).__iterate(fn, reverse);
   },
   __ensureOwner: function(ownerID) {
     if (ownerID === this.__ownerID) {
@@ -2280,36 +2309,27 @@ var $Record = Record;
       this._map = newMap;
       return this;
     }
-    return this._make(newMap, ownerID);
-  },
-  __iterate: function(fn, reverse) {
-    var record = this;
-    return this._defaultValues.map((function(_, k) {
-      return record.get(k);
-    })).__iterate(fn, reverse);
-  },
-  _empty: function() {
-    var Record = Object.getPrototypeOf(this).constructor;
-    return $Record._empty || ($Record._empty = this._make(Map.empty()));
-  },
-  _make: function(map, ownerID) {
-    var record = Object.create(Object.getPrototypeOf(this));
-    record._map = map;
-    record.__ownerID = ownerID;
-    return record;
+    return makeRecord(this, newMap, ownerID);
   }
 }, {}, Sequence);
-Record.prototype.__deepEqual = Map.prototype.__deepEqual;
-Record.prototype.merge = Map.prototype.merge;
-Record.prototype.mergeWith = Map.prototype.mergeWith;
-Record.prototype.mergeDeep = Map.prototype.mergeDeep;
-Record.prototype.mergeDeepWith = Map.prototype.mergeDeepWith;
-Record.prototype.update = Map.prototype.update;
-Record.prototype.updateIn = Map.prototype.updateIn;
-Record.prototype.cursor = Map.prototype.cursor;
-Record.prototype.withMutations = Map.prototype.withMutations;
-Record.prototype.asMutable = Map.prototype.asMutable;
-Record.prototype.asImmutable = Map.prototype.asImmutable;
+var RecordPrototype = Record.prototype;
+RecordPrototype.__deepEqual = MapPrototype.__deepEqual;
+RecordPrototype.merge = MapPrototype.merge;
+RecordPrototype.mergeWith = MapPrototype.mergeWith;
+RecordPrototype.mergeDeep = MapPrototype.mergeDeep;
+RecordPrototype.mergeDeepWith = MapPrototype.mergeDeepWith;
+RecordPrototype.update = MapPrototype.update;
+RecordPrototype.updateIn = MapPrototype.updateIn;
+RecordPrototype.cursor = MapPrototype.cursor;
+RecordPrototype.withMutations = MapPrototype.withMutations;
+RecordPrototype.asMutable = MapPrototype.asMutable;
+RecordPrototype.asImmutable = MapPrototype.asImmutable;
+function makeRecord(likeRecord, map, ownerID) {
+  var record = Object.create(Object.getPrototypeOf(likeRecord));
+  record._map = map;
+  record.__ownerID = ownerID;
+  return record;
+}
 var Range = function Range(start, end, step) {
   if (!(this instanceof $Range)) {
     return new $Range(start, end, step);
@@ -2365,9 +2385,6 @@ var $Range = Range;
     }
     return new $Range(this.get(begin, this._end), this.get(end, this._end), this._step);
   },
-  __deepEquals: function(other) {
-    return this._start === other._start && this._end === other._end && this._step === other._step;
-  },
   indexOf: function(searchValue) {
     var offsetValue = searchValue - this._start;
     if (offsetValue % this._step === 0) {
@@ -2399,19 +2416,19 @@ var $Range = Range;
       value += reverse ? -step : step;
     }
     return reversedIndices ? this.length : ii;
+  },
+  __deepEquals: function(other) {
+    return this._start === other._start && this._end === other._end && this._step === other._step;
   }
 }, {}, IndexedSequence);
-Range.prototype.__toJS = Range.prototype.toArray;
-Range.prototype.first = Vector.prototype.first;
-Range.prototype.last = Vector.prototype.last;
+var RangePrototype = Range.prototype;
+RangePrototype.__toJS = RangePrototype.toArray;
+RangePrototype.first = VectorPrototype.first;
+RangePrototype.last = VectorPrototype.last;
 var __EMPTY_RANGE = Range(0, 0);
-function invariant(condition, error) {
-  if (!condition)
-    throw new Error(error);
-}
 var Repeat = function Repeat(value, times) {
-  if (times === 0 && __EMPTY_REPEAT) {
-    return __EMPTY_REPEAT;
+  if (times === 0 && EMPTY_REPEAT) {
+    return EMPTY_REPEAT;
   }
   if (!(this instanceof $Repeat)) {
     return new $Repeat(value, times);
@@ -2437,9 +2454,6 @@ var $Repeat = Repeat;
   contains: function(searchValue) {
     return is(this._value, searchValue);
   },
-  __deepEquals: function(other) {
-    return is(this._value, other._value);
-  },
   slice: function(begin, end, maintainIndices) {
     if (maintainIndices) {
       return $traceurRuntime.superCall(this, $Repeat.prototype, "slice", [begin, end, maintainIndices]);
@@ -2447,7 +2461,7 @@ var $Repeat = Repeat;
     var length = this.length;
     begin = begin < 0 ? Math.max(0, length + begin) : Math.min(length, begin);
     end = end == null ? length : end > 0 ? Math.min(length, end) : Math.max(0, length + end);
-    return end > begin ? new $Repeat(this._value, end - begin) : __EMPTY_REPEAT;
+    return end > begin ? new $Repeat(this._value, end - begin) : EMPTY_REPEAT;
   },
   reverse: function(maintainIndices) {
     return maintainIndices ? $traceurRuntime.superCall(this, $Repeat.prototype, "reverse", [maintainIndices]) : this;
@@ -2474,18 +2488,18 @@ var $Repeat = Repeat;
       }
     }
     return reversedIndices ? this.length : ii;
+  },
+  __deepEquals: function(other) {
+    return is(this._value, other._value);
   }
 }, {}, IndexedSequence);
-Repeat.prototype.last = Repeat.prototype.first;
-Repeat.prototype.has = Range.prototype.has;
-Repeat.prototype.take = Range.prototype.take;
-Repeat.prototype.skip = Range.prototype.skip;
-Repeat.prototype.__toJS = Range.prototype.__toJS;
-function invariant(condition, error) {
-  if (!condition)
-    throw new Error(error);
-}
-var __EMPTY_REPEAT = new Repeat(undefined, 0);
+var RepeatPrototype = Repeat.prototype;
+RepeatPrototype.last = RepeatPrototype.first;
+RepeatPrototype.has = RangePrototype.has;
+RepeatPrototype.take = RangePrototype.take;
+RepeatPrototype.skip = RangePrototype.skip;
+RepeatPrototype.__toJS = RangePrototype.__toJS;
+var EMPTY_REPEAT = new Repeat(undefined, 0);
 function fromJS(json, converter) {
   if (converter) {
     return _fromJSWith(converter, json, '', {'': json});
