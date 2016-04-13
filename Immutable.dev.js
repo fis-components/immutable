@@ -989,13 +989,8 @@ function arrCopy(arr) {
   return newArr;
 }
 var Map = function Map(sequence) {
-  if (sequence && sequence.constructor === $Map) {
-    return sequence;
-  }
-  if (!sequence || sequence.length === 0) {
-    return $Map.empty();
-  }
-  return $Map.empty().merge(sequence);
+  var map = $Map.empty();
+  return sequence ? sequence.constructor === $Map ? sequence : map.merge(sequence) : map;
 };
 var $Map = Map;
 ($traceurRuntime.createClass)(Map, {
@@ -1130,15 +1125,7 @@ var $BitmapIndexedNode = BitmapIndexedNode;
       return this;
     }
     if (!exists && newNode && nodes.length >= MAX_BITMAP_SIZE) {
-      var count = 0;
-      var expandedNodes = [];
-      for (var ii = 0; bitmap !== 0; ii++, bitmap >>>= 1) {
-        if (bitmap & 1) {
-          expandedNodes[ii] = nodes[count++];
-        }
-      }
-      expandedNodes[hashFrag] = newNode;
-      return new ArrayNode(ownerID, count + 1, expandedNodes);
+      return expandNodes(ownerID, nodes, bitmap, idx, newNode);
     }
     if (exists && !newNode && nodes.length === 2 && isLeafNode(nodes[idx ^ 1])) {
       return nodes[idx ^ 1];
@@ -1147,20 +1134,8 @@ var $BitmapIndexedNode = BitmapIndexedNode;
       return newNode;
     }
     var isEditable = ownerID && ownerID === this.ownerID;
-    var newBitmap = bitmap;
-    var newNodes;
-    if (exists) {
-      if (newNode) {
-        newNodes = isEditable ? nodes : arrCopy(nodes);
-        newNodes[idx] = newNode;
-      } else {
-        newNodes = spliceOut(nodes, idx, isEditable);
-        newBitmap ^= bit;
-      }
-    } else {
-      newNodes = spliceIn(nodes, idx, newNode, isEditable);
-      newBitmap |= bit;
-    }
+    var newBitmap = exists ? newNode ? bitmap : bitmap ^ bit : bitmap | bit;
+    var newNodes = exists ? newNode ? setIn(nodes, idx, newNode, isEditable) : spliceOut(nodes, idx, isEditable) : spliceIn(nodes, idx, newNode, isEditable);
     if (isEditable) {
       this.bitmap = newBitmap;
       this.nodes = newNodes;
@@ -1207,25 +1182,13 @@ var $ArrayNode = ArrayNode;
       newCount++;
     } else if (!newNode) {
       newCount--;
-      if (newCount <= MIN_ARRAY_SIZE) {
-        var packedNodes = [];
-        var bitmap = 0;
-        for (var ii = 0,
-            bit = 1,
-            len = nodes.length; ii < len; ii++, bit <<= 1) {
-          var nodeII = nodes[ii];
-          if (ii !== idx && nodeII) {
-            packedNodes.push(nodeII);
-            bitmap |= bit;
-          }
-        }
-        return new BitmapIndexedNode(ownerID, bitmap, packedNodes);
+      if (newCount < MIN_ARRAY_SIZE) {
+        return packNodes(ownerID, nodes, newCount, idx);
       }
     }
     var isEditable = ownerID && ownerID === this.ownerID;
-    var newNodes = isEditable ? nodes : arrCopy(nodes);
-    newNodes[idx] = newNode;
-    if (ownerID && ownerID === this.ownerID) {
+    var newNodes = setIn(nodes, idx, newNode, isEditable);
+    if (isEditable) {
       this.count = newCount;
       this.nodes = newNodes;
       return this;
@@ -1390,6 +1353,30 @@ function mergeIntoNode(node, ownerID, shift, hash, entry) {
   var nodes = idx1 === idx2 ? [mergeIntoNode(node, ownerID, shift + SHIFT, hash, entry)] : ((newNode = new ValueNode(ownerID, hash, entry)), idx1 < idx2 ? [node, newNode] : [newNode, node]);
   return new BitmapIndexedNode(ownerID, (1 << idx1) | (1 << idx2), nodes);
 }
+function packNodes(ownerID, nodes, count, excluding) {
+  var bitmap = 0;
+  var packedII = 0;
+  var packedNodes = new Array(count);
+  for (var ii = 0,
+      bit = 1,
+      len = nodes.length; ii < len; ii++, bit <<= 1) {
+    var node = nodes[ii];
+    if (node != null && ii !== excluding) {
+      bitmap |= bit;
+      packedNodes[packedII++] = node;
+    }
+  }
+  return new BitmapIndexedNode(ownerID, bitmap, packedNodes);
+}
+function expandNodes(ownerID, nodes, bitmap, including, node) {
+  var count = 0;
+  var expandedNodes = new Array(SIZE);
+  for (var ii = 0; bitmap !== 0; ii++, bitmap >>>= 1) {
+    expandedNodes[ii] = bitmap & 1 ? nodes[count++] : null;
+  }
+  expandedNodes[including] = node;
+  return new ArrayNode(ownerID, count + 1, expandedNodes);
+}
 function mergeIntoMapWith(map, merger, iterables) {
   var seqs = [];
   for (var ii = 0; ii < iterables.length; ii++) {
@@ -1436,6 +1423,11 @@ function popCount(x) {
   x = x + (x >> 16);
   return x & 0x7f;
 }
+function setIn(array, idx, val, canEdit) {
+  var newArray = canEdit ? array : arrCopy(array);
+  newArray[idx] = val;
+  return newArray;
+}
 function spliceIn(array, idx, val, canEdit) {
   var newLen = array.length + 1;
   if (canEdit && idx + 1 === newLen) {
@@ -1480,7 +1472,7 @@ function hashValue(o) {
   var type = typeof o;
   if (type === 'number') {
     if ((o | 0) === o) {
-      return o % HASH_MAX_VAL;
+      return o & HASH_MAX_VAL;
     }
     o = '' + o;
     type = 'string';
@@ -1509,11 +1501,11 @@ function cachedHashString(string) {
 function hashString(string) {
   var hash = 0;
   for (var ii = 0; ii < string.length; ii++) {
-    hash = (31 * hash + string.charCodeAt(ii));
+    hash = (31 * hash + string.charCodeAt(ii)) & HASH_MAX_VAL;
   }
-  return hash % HASH_MAX_VAL;
+  return hash;
 }
-var HASH_MAX_VAL = 0x100000000;
+var HASH_MAX_VAL = 0x7FFFFFFF;
 var STRING_HASH_CACHE_MIN_STRLEN = 16;
 var STRING_HASH_CACHE_MAX_SIZE = 255;
 var STRING_HASH_CACHE_SIZE = 0;
@@ -1724,15 +1716,15 @@ var $Vector = Vector;
     return EMPTY_VECT || (EMPTY_VECT = makeVector(0, 0, SHIFT, EMPTY_VNODE, EMPTY_VNODE));
   },
   from: function(sequence) {
-    if (sequence && sequence.constructor === $Vector) {
-      return sequence;
-    }
     if (!sequence || sequence.length === 0) {
       return $Vector.empty();
     }
+    if (sequence.constructor === $Vector) {
+      return sequence;
+    }
     var isArray = Array.isArray(sequence);
     if (sequence.length > 0 && sequence.length < SIZE) {
-      return makeVector(0, sequence.length, SHIFT, EMPTY_VNODE, new VNode(isArray ? sequence.slice() : Sequence(sequence).toArray()));
+      return makeVector(0, sequence.length, SHIFT, EMPTY_VNODE, new VNode(isArray ? arrCopy(sequence) : Sequence(sequence).toArray()));
     }
     if (!isArray) {
       sequence = Sequence(sequence);
@@ -2074,9 +2066,6 @@ var $Set = Set;
     return this.has(value) ? value : notSetValue;
   },
   add: function(value) {
-    if (value == null) {
-      return this;
-    }
     var newMap = this._map;
     if (!newMap) {
       newMap = Map.empty().__ensureOwner(this.__ownerID);
@@ -2090,7 +2079,7 @@ var $Set = Set;
     return newMap === this._map ? this : makeSet(newMap);
   },
   delete: function(value) {
-    if (value == null || this._map == null) {
+    if (this._map == null) {
       return this;
     }
     var newMap = this._map.delete(value);
@@ -2208,13 +2197,8 @@ var $Set = Set;
     return EMPTY_SET || (EMPTY_SET = makeSet());
   },
   from: function(sequence) {
-    if (sequence && sequence.constructor === $Set) {
-      return sequence;
-    }
-    if (!sequence || sequence.length === 0) {
-      return $Set.empty();
-    }
-    return $Set.empty().union(sequence);
+    var set = $Set.empty();
+    return sequence ? sequence.constructor === $Set ? sequence : set.union(sequence) : set;
   },
   fromKeys: function(sequence) {
     return $Set.from(Sequence(sequence).flip());
@@ -2236,13 +2220,8 @@ function makeSet(map, ownerID) {
 }
 var EMPTY_SET;
 var OrderedMap = function OrderedMap(sequence) {
-  if (sequence && sequence.constructor === $OrderedMap) {
-    return sequence;
-  }
-  if (!sequence || sequence.length === 0) {
-    return $OrderedMap.empty();
-  }
-  return $OrderedMap.empty().merge(sequence);
+  var map = $OrderedMap.empty();
+  return sequence ? sequence.constructor === $OrderedMap ? sequence : map.merge(sequence) : map;
 };
 var $OrderedMap = OrderedMap;
 ($traceurRuntime.createClass)(OrderedMap, {
@@ -2317,9 +2296,9 @@ var $OrderedMap = OrderedMap;
     return this._vector ? this._vector.fromEntries().__iterate(fn, reverse) : 0;
   },
   __deepEqual: function(other) {
-    var iterator = this._vector.__iterator__();
+    var iterator = this._vector.iterator();
     return other.every((function(v, k) {
-      var entry = iterator.next();
+      var entry = iterator.next().value;
       entry && (entry = entry[1]);
       return entry && is(k, entry[0]) && is(v, entry[1]);
     }));
