@@ -268,18 +268,18 @@ declare module 'immutable' {
      * Returns a new indexed sequence of the keys of this sequence,
      * discarding values.
      */
-    keys(): IndexedSequence<K>;
+    keySeq(): IndexedSequence<K>;
 
     /**
      * Returns a new indexed sequence of the keys of this sequence,
      * discarding keys.
      */
-    values(): IndexedSequence<V>;
+    valueSeq(): IndexedSequence<V>;
 
     /**
      * Returns a new indexed sequence of [key, value] tuples.
      */
-    entries(): IndexedSequence</*(K, V)*/Array<any>>;
+    entrySeq(): IndexedSequence</*(K, V)*/Array<any>>;
 
     /**
      * The `sideEffect` is executed for every entry in the sequence.
@@ -624,7 +624,7 @@ declare module 'immutable' {
      * If this is a sequence of entries (key-value tuples), it will return a
      * sequence of those entries.
      */
-    fromEntries(): Sequence<any, any>;
+    fromEntrySeq(): Sequence<any, any>;
 
     /**
      * Returns the first index at which a given value can be found in the
@@ -915,13 +915,32 @@ declare module 'immutable' {
 
     /**
      * Returns a new Map which excludes this `key`.
+     *
+     * Note: `delete` cannot be safely used in IE8
+     * @alias delete
      */
+    remove(key: K): Map<K, V>;
     delete(key: K): Map<K, V>;
 
     /**
      * Returns a new Map containing no keys or values.
      */
     clear(): Map<K, V>;
+
+    /**
+     * An iterator of this Map's keys.
+     */
+    keys(): Iterator<K>;
+
+    /**
+     * An iterator of this Map's values.
+     */
+    values(): Iterator<V>;
+
+    /**
+     * An iterator of this Map's entries as [key, value] tuples.
+     */
+    entries(): Iterator</*[K, V]*/Array<any>>;
 
     /**
      * When this cursor's (or any of its sub-cursors') `update` method is called,
@@ -944,10 +963,12 @@ declare module 'immutable' {
     /**
      * Returns a new Map having updated the value at this `key` with the return
      * value of calling `updater` with the existing value, or `notSetValue` if
-     * the key was not set.
+     * the key was not set. If called with only a single argument, `updater` is
+     * called with the Map itself.
      *
      * Equivalent to: `map.set(key, updater(map.get(key, notSetValue)))`.
      */
+    update(updater: (value: Map<K, V>) => Map<K, V>): Map<K, V>;
     update(key: K, updater: (value: V) => V): Map<K, V>;
     update(key: K, notSetValue: V, updater: (value: V) => V): Map<K, V>;
 
@@ -1132,11 +1153,11 @@ declare module 'immutable' {
    *     var ABRecord = Record({a:1, b:2})
    *     var myRecord = new ABRecord({b:3})
    *
-   * Records always have a value for the keys they define. `delete()`ing a key
+   * Records always have a value for the keys they define. `remove`ing a key
    * from a record simply resets it to the default value for that key.
    *
    *     myRecord.length // 2
-   *     myRecordWithoutB = myRecord.delete('b')
+   *     myRecordWithoutB = myRecord.remove('b')
    *     myRecordWithoutB.get('b') // 2
    *     myRecordWithoutB.length // 2
    *
@@ -1199,7 +1220,7 @@ declare module 'immutable' {
     function from<T>(array: Array<T>): Set<T>;
 
     /**
-     * `Set.fromKeys()` creates a new immutable Set containing the keys from
+     * `Set.fromkeySeq()` creates a new immutable Set containing the keys from
      * this Sequence or JavaScript Object.
      */
     function fromKeys<T>(sequence: Sequence<T, any>): Set<T>;
@@ -1226,13 +1247,32 @@ declare module 'immutable' {
 
     /**
      * Returns a new Set which excludes this value.
+     *
+     * Note: `delete` cannot be safely used in IE8
+     * @alias delete
      */
+    remove(value: T): Set<T>;
     delete(value: T): Set<T>;
 
     /**
      * Returns a new Set containing no values.
      */
     clear(): Set<T>;
+
+    /**
+     * An iterator of this Set's values (Sets do not have keys).
+     */
+    keys(): Iterator<T>;
+
+    /**
+     * An iterator of this Set's values.
+     */
+    values(): Iterator<T>;
+
+    /**
+     * An iterator of this Sets's entries as [value, value] tuples.
+     */
+    entries(): Iterator</*[T, T]*/Array<T>>;
 
     /**
      * Alias for `union`.
@@ -1343,13 +1383,34 @@ declare module 'immutable' {
     /**
      * Returns a new Vector which excludes this `index`. It will not affect the
      * length of the Vector, instead leaving a sparse hole.
+     *
+     * Note: `delete` cannot be safely used in IE8
+     * @alias delete
      */
+    remove(index: number): Vector<T>;
     delete(index: number): Vector<T>;
 
     /**
      * Returns a new Vector with 0 length and no values.
      */
     clear(): Vector<T>;
+
+    /**
+     * An iterator of this Vector's keys.
+     */
+    keys(sparse?: boolean): Iterator<number>;
+
+    /**
+     * An iterator of this Vector's values.
+     */
+    values(sparse?: boolean): Iterator<T>;
+
+    /**
+     * An iterator of this Vector's entries as [key, value] tuples.
+     *
+     * `sparse` defaults to true for entries.
+     */
+    entries(sparse?: boolean): Iterator</*[number, T]*/Array<any>>;
 
     /**
      * Returns a new Vector with the provided `values` appended, starting at this
@@ -1402,10 +1463,12 @@ declare module 'immutable' {
     /**
      * Returns a new Vector with an updated value at `index` with the return
      * value of calling `updater` with the existing value, or `notSetValue` if
-     * `index` was not set.
+     * `index` was not set. If called with a single argument, `updater` is
+     * called with the Vector itself.
      *
      * @see Map.update
      */
+    update(updater: (value: Vector<T>) => Vector<T>): Vector<T>;
     update(index: number, updater: (value: T) => T): Vector<T>;
     update(index: number, notSetValue: T, updater: (value: T) => T): Vector<T>;
 
@@ -1480,15 +1543,6 @@ declare module 'immutable' {
      * @see `Map.prototype.asImmutable`
      */
     asImmutable(): Vector<T>;
-
-    /**
-     * Allows `Vector` to be used in ES6 for-of expressions, returning an object
-     * that adheres to the `Iterator` interface: it has a `next()` method which
-     * returns the next (index, value) tuple.
-     *
-     * When no entries remain, returns `{ done: true }`
-     */
-    iterator(): { next(): { value: /*(number, T)*/Array<any>; done: boolean; } }
   }
 
 
@@ -1519,6 +1573,12 @@ declare module 'immutable' {
   export interface Cursor<T> extends Sequence<any, any> {
 
     /**
+     * Returns a sub-cursor following the key-path starting from this cursor.
+     */
+    cursor(subKeyPath: Array<any>): Cursor<any>;
+    cursor(subKey: any): Cursor<any>;
+
+    /**
      * Returns the value at the cursor, if the cursor path does not yet exist,
      * returns `notSetValue`.
      */
@@ -1541,26 +1601,8 @@ declare module 'immutable' {
     getIn(keyPath: Array<any>, notSetValue?: any): any;
 
     /**
-     * Updates the value in the data this cursor points to, triggering the
-     * callback for the root cursor and returning a new cursor pointing to the
-     * new data.
-     */
-    update(updater: (value: T) => T): Cursor<T>;
-
-    /**
-     * Updates the value at `key` in the cursor, returning a new cursor pointing
-     * to the new data.
-     *
-     * This is shorthand for `cursor.update(x => x.update(key, fn))`
-     */
-    update(key: any, updater: (value: any) => any): Cursor<T>;
-    update(key: any, notSetValue: any, updater: (value: any) => any): Cursor<T>;
-
-    /**
      * Sets `value` at `key` in the cursor, returning a new cursor to the same
      * point in the new data.
-     *
-     * This is shorthand for `cursor.update(x => x.set(key, value))`
      */
     set(key: any, value: any): Cursor<T>;
 
@@ -1568,15 +1610,31 @@ declare module 'immutable' {
      * Deletes `key` from the cursor, returning a new cursor to the same
      * point in the new data.
      *
-     * This is shorthand for `cursor.update(x => x.delete(key))`
+     * Note: `delete` cannot be safely used in IE8
+     * @alias delete
      */
+    remove(key: any): Cursor<T>;
     delete(key: any): Cursor<T>;
 
     /**
-     * Returns a sub-cursor following the key-path starting from this cursor.
+     * Clears the value at this cursor, returning a new cursor to the same
+     * point in the new data.
      */
-    cursor(subKeyPath: Array<any>): Cursor<any>;
-    cursor(subKey: any): Cursor<any>;
+    clear(): Cursor<T>;
+
+    /**
+     * Updates the value in the data this cursor points to, triggering the
+     * callback for the root cursor and returning a new cursor pointing to the
+     * new data.
+     */
+    update(updater: (value: T) => T): Cursor<T>;
+    update(key: any, updater: (value: any) => any): Cursor<T>;
+    update(key: any, notSetValue: any, updater: (value: any) => any): Cursor<T>;
+  }
+
+  // Shim for ES6 Iterator
+  export interface Iterator<T> {
+    next(): { value: T; done: boolean; }
   }
 
 }
