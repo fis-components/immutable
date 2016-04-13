@@ -194,6 +194,15 @@ declare module 'immutable' {
     toOrderedMap(): Map<K, V>;
 
     /**
+     * Converts this Iterable to a Set, maintaining the order of iteration and
+     * discarding keys.
+     *
+     * Note: This is equivalent to `OrderedSet(this.valueSeq())`, but provided
+     * for convenience and to allow for chained expressions.
+     */
+    toOrderedSet(): Set<V>;
+
+    /**
      * Converts this Iterable to a Set, discarding keys. Throws if values
      * are not hashable.
      *
@@ -398,6 +407,9 @@ declare module 'immutable' {
      *   * Returns `1` (or any positive number) if `valueA` comes after `valueB`
      *   * Is pure, i.e. it must always return the same value for the same pair
      *     of values.
+     *
+     * When sorting collections which have no defined order, their ordered
+     * equivalents will be returned. e.g. `map.sort()` returns OrderedMap.
      */
     sort(comparator?: (valueA: V, valueB: V) => number): /*this*/Iterable<K, V>;
 
@@ -1503,9 +1515,17 @@ declare module 'immutable' {
    * from a record simply resets it to the default value for that key.
    *
    *     myRecord.size // 2
+   *     myRecord.get('a') // 1
+   *     myRecord.get('b') // 3
    *     myRecordWithoutB = myRecord.remove('b')
    *     myRecordWithoutB.get('b') // 2
    *     myRecordWithoutB.size // 2
+   *
+   * Values provided to the constructor not found in the Record type will
+   * be ignored:
+   *
+   *     var myRecord = new ABRecord({b:3, x:10})
+   *     myRecord.get('x') // undefined
    *
    * Because Records have a known set of string keys, property get access works
    * as expected, however property sets will throw an Error.
@@ -1581,9 +1601,10 @@ declare module 'immutable' {
    * iterable-like.
    */
   export function Set<T>(): Set<T>;
-  export function Set<T>(iter: Iterable<any, T>): Set<T>;
+  export function Set<T>(iter: SetIterable<T>): Set<T>;
+  export function Set<T>(iter: IndexedIterable<T>): Set<T>;
+  export function Set<K, V>(iter: KeyedIterable<K, V>): Set</*[K,V]*/any>;
   export function Set<T>(array: Array<T>): Set<T>;
-  export function Set<T>(obj: {[key: string]: T}): Set<T>;
   export function Set<T>(iterator: Iterator<T>): Set<T>;
   export function Set<T>(iterable: /*Iterable<T>*/Object): Set<T>;
 
@@ -1654,6 +1675,48 @@ declare module 'immutable' {
 
 
   /**
+   * Ordered Set
+   * -----------
+   *
+   * OrderedSet constructors return a Set which has the additional guarantee of
+   * the iteration order of entries to match the order in which they were added.
+   * This makes OrderedSet behave similarly to native JS objects or arrays.
+   */
+
+  export module OrderedSet {
+
+    /**
+     * True if the provided value is an OrderedSet.
+     */
+    function isOrderedSet(maybeOrderedSet: any): boolean;
+
+    /**
+     * Creates a new ordered Set containing `values`.
+     */
+    function of<T>(...values: T[]): Set<T>;
+
+    /**
+     * `OrderedSet.fromKeys()` creates a new immutable ordered Set containing
+     * the keys from this Iterable or JavaScript Object.
+     */
+    function fromKeys<T>(iter: Iterable<T, any>): Set<T>;
+    function fromKeys(obj: {[key: string]: any}): Set<string>;
+  }
+
+  /**
+   * Create a new immutable ordered Set containing the values of the provided
+   * iterable-like.
+   */
+  export function OrderedSet<T>(): Set<T>;
+  export function OrderedSet<T>(iter: SetIterable<T>): Set<T>;
+  export function OrderedSet<T>(iter: IndexedIterable<T>): Set<T>;
+  export function OrderedSet<K, V>(iter: KeyedIterable<K, V>): Set</*[K,V]*/any>;
+  export function OrderedSet<T>(array: Array<T>): Set<T>;
+  export function OrderedSet<T>(iterator: Iterator<T>): Set<T>;
+  export function OrderedSet<T>(iterable: /*Iterable<T>*/Object): Set<T>;
+
+
+  /**
    * List
    * ------
    *
@@ -1681,9 +1744,10 @@ declare module 'immutable' {
    * iterable-like.
    */
   export function List<T>(): List<T>;
-  export function List<T>(iter: Iterable<any, T>): List<T>;
+  export function List<T>(iter: IndexedIterable<T>): List<T>;
+  export function List<T>(iter: SetIterable<T>): List<T>;
+  export function List<K, V>(iter: KeyedIterable<K, V>): List</*[K,V]*/any>;
   export function List<T>(array: Array<T>): List<T>;
-  export function List<T>(obj: {[key: string]: T}): List<T>;
   export function List<T>(iterator: Iterator<T>): List<T>;
   export function List<T>(iterable: /*Iterable<T>*/Object): List<T>;
 
@@ -1706,8 +1770,11 @@ declare module 'immutable' {
     setIn(keyPath: Array<any>, value: T): List<T>;
 
     /**
-     * Returns a new List which excludes this `index`. It will not affect the
-     * size of the List, instead leaving an undefined value.
+     * Returns a new List which excludes this `index` and with a size 1 less
+     * than this List. Values at indicies above `index` are shifted down by 1 to
+     * fill the position.
+     *
+     * This is synonymous with `list.splice(index, 1)`.
      *
      * `index` may be a negative number, which indexes back from the end of the
      * List. `v.delete(-1)` deletes the last item in the List.
@@ -1881,9 +1948,10 @@ declare module 'immutable' {
    * iterable.
    */
   export function Stack<T>(): Stack<T>;
-  export function Stack<T>(iter: Iterable<any, T>): Stack<T>;
+  export function Stack<T>(iter: IndexedIterable<T>): Stack<T>;
+  export function Stack<T>(iter: SetIterable<T>): Stack<T>;
+  export function Stack<K, V>(iter: KeyedIterable<K, V>): Stack</*[K,V]*/any>;
   export function Stack<T>(array: Array<T>): Stack<T>;
-  export function Stack<T>(obj: {[key: string]: T}): Stack<T>;
   export function Stack<T>(iterator: Iterator<T>): Stack<T>;
   export function Stack<T>(iterable: /*Iterable<T>*/Object): Stack<T>;
 
