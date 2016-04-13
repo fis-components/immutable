@@ -9,11 +9,12 @@ and change detection techniques with simple logic. [Persistent][] data presents
 a mutative API which does not update the data in-place, but instead always
 yields new updated data.
 
-`Immutable` provides Persistent Immutable `List`, `Stack`, `Map`, `OrderedMap`,
-`Set`, `OrderedSet` and `Record`. They are highly efficient on modern JavaScript
-VMs by using structural sharing via [hash maps tries][] and
-[vector tries][] as popularized by Clojure and Scala,
-minimizing the need to copy or cache data.
+Immutable.js provides many Persistent Immutable data structures including:
+`List`, `Stack`, `Map`, `OrderedMap`, `Set`, `OrderedSet` and `Record`.
+
+These data structures are highly efficient on modern JavaScript VMs by using
+structural sharing via [hash maps tries][] and [vector tries][] as popularized
+by Clojure and Scala, minimizing the need to copy or cache data.
 
 `Immutable` also provides a lazy `Seq`, allowing efficient
 chaining of collection methods like `map` and `filter` without creating
@@ -46,7 +47,7 @@ map2.get('b'); // 50
 
 ### Browser
 
-To use `immutable` from a browser, download [dist/immutable.min.js](./dist/immutable.min.js)
+To use `immutable` from a browser, download [dist/immutable.min.js](https://github.com/facebook/immutable-js/blob/master/dist/immutable.min.js)
 or use a CDN such as [CDNJS](https://cdnjs.com/libraries/immutable)
 or [jsDelivr](http://www.jsdelivr.com/#!immutable.js).
 
@@ -86,7 +87,7 @@ Just add a reference with a relative path to the type declarations at the top
 of your file.
 
 ```javascript
-///<reference path='./node_modules/immutable/dist/Immutable.d.ts'/>
+///<reference path='./node_modules/immutable/dist/immutable.d.ts'/>
 import Immutable = require('immutable');
 var map1: Immutable.Map<string, number>;
 map1 = Immutable.Map({a:1, b:2, c:3});
@@ -103,8 +104,7 @@ Much of what makes application development difficult is tracking mutation and
 maintaining state. Developing with immutable data encourages you to think
 differently about how data flows through your application.
 
-Subscribing to data events throughout your application, by using
-`Object.observe`, or any other mechanism, creates a huge overhead of
+Subscribing to data events throughout your application creates a huge overhead of
 book-keeping which can hurt performance, sometimes dramatically, and creates
 opportunities for areas of your application to get out of sync with each other
 due to easy to make programmer error. Since immutable data never changes,
@@ -116,17 +116,30 @@ and especially well with an application designed using the ideas of [Flux][].
 
 When data is passed from above rather than being subscribed to, and you're only
 interested in doing work when something has changed, you can use equality.
-`Immutable` always returns itself when a mutation results in an identical
-collection, allowing for using `===` equality to determine if something
-has changed.
+
+Immutable collections should be treated as *values* rather than *objects*. While
+objects represents some thing which could change over time, a value represents
+the state of that thing at a particular instance of time. This principle is most
+important to understanding the appropriate use of immutable data. In order to
+treat Immutable.js collections as values, it's important to use the
+`Immutable.is()` function or `.equals()` method to determine value equality
+instead of the `===` operator which determines object reference identity.
 
 ```javascript
 var map1 = Immutable.Map({a:1, b:2, c:3});
 var map2 = map1.set('b', 2);
-assert(map1 === map2); // no change
+assert(map1.equals(map2) === true);
 var map3 = map1.set('b', 50);
-assert(map1 !== map3); // change
+assert(map1.equals(map3) === false);
 ```
+
+Note: As a performance optimization `Immutable` attempts to return the existing
+collection when an operation would result in an identical collection, allowing
+for using `===` reference equality to determine if something definitely has not
+changed. This can be extremely useful when used within memoization function
+which would prefer to re-run the function if a deeper equality check could
+potentially be more costly. The `===` equality check is also used internally by
+`Immutable.is` and `.equals()` as a performance optimization.
 
 If an object is immutable, it can be "copied" simply by making another reference
 to it instead of copying the entire object. Because a reference is much smaller
@@ -205,9 +218,29 @@ results, these operations can be extremely efficient.
 
 ```javascript
 var myObject = {a:1,b:2,c:3};
-Seq(myObject).map(x => x * x).toObject();
+Immutable.Seq(myObject).map(x => x * x).toObject();
 // { a: 1, b: 4, c: 9 }
 ```
+
+Keep in mind, when using JS objects to construct Immutable Maps, that
+JavaScript Object properties are always strings, even if written in a quote-less
+shorthand, while Immutable Maps accept keys of any type.
+
+```js
+var obj = { 1: "one" };
+Object.keys(obj); // [ "1" ]
+obj["1"]; // "one"
+obj[1];   // "one"
+
+var map = Immutable.fromJS(obj);
+map.get("1"); // "one"
+map.get(1);   // undefined
+```
+
+Property access for JavaScript Objects first converts the key to a string, but
+since Immutable Map keys can be of any type the argument to `get()` is
+not altered.
+
 
 ### Converts back to raw JavaScript objects.
 
@@ -337,8 +370,9 @@ data, performing a deep equality check if necessary.
 ```javascript
 var map1 = Immutable.Map({a:1, b:1, c:1});
 var map2 = Immutable.Map({a:1, b:1, c:1});
-assert(map1 !== map2);
-assert(Immutable.is(map1, map2) === true);
+assert(map1 !== map2); // two different instances
+assert(Immutable.is(map1, map2)); // have equivalent values
+assert(map1.equals(map2)); // alternatively use the equals method
 ```
 
 `Immutable.is()` uses the same measure of equality as [Object.is][]
@@ -359,9 +393,9 @@ Batching Mutations
 > — Rich Hickey, Clojure
 
 Applying a mutation to create a new immutable object results in some overhead,
-which can add up to a performance penalty. If you need to apply a series of
-mutations locally before returning, `Immutable` gives you the ability to create
-a temporary mutable (transient) copy of a collection and apply a batch of
+which can add up to a minor performance penalty. If you need to apply a series
+of mutations locally before returning, `Immutable` gives you the ability to
+create a temporary mutable (transient) copy of a collection and apply a batch of
 mutations in a performant manner by using `withMutations`. In fact, this is
 exactly how  `Immutable` applies complex mutations itself.
 
@@ -381,13 +415,19 @@ Note: `immutable` also provides `asMutable` and `asImmutable`, but only
 encourages their use when `withMutations` will not suffice. Use caution to not
 return a mutable copy, which could result in undesired behavior.
 
+*Important!*: Only a select few methods can be used in `withMutations` including
+`set`, `push` and `pop`. These methods can be applied directly against a
+persistent data-structure where other methods like `map`, `filter`, `sort`,
+and `splice` will always return new immutable data-structures and never mutate
+a mutable collection.
+
 
 Documentation
 -------------
 
 [Read the docs](http://facebook.github.io/immutable-js/docs/) and eat your vegetables.
 
-Docs are automatically generated from [Immutable.d.ts](./type-definitions/Immutable.d.ts).
+Docs are automatically generated from [Immutable.d.ts](https://github.com/facebook/immutable-js/blob/master/type-definitions/Immutable.d.ts).
 Please contribute!
 
 Also, don't miss the [Wiki](https://github.com/facebook/immutable-js/wiki) which
@@ -411,11 +451,11 @@ Changes are tracked as [Github releases](https://github.com/facebook/immutable-j
 Thanks
 ------
 
-[Hugh Jackson](https://github.com/hughfdjackson/), for providing the npm package
-name. If you're looking for his unsupported package, see [v1.4.1](https://www.npmjs.org/package/immutable/1.4.1).
-
 [Phil Bagwell](https://www.youtube.com/watch?v=K2NYwP90bNs), for his inspiration
 and research in persistent data structures.
+
+[Hugh Jackson](https://github.com/hughfdjackson/), for providing the npm package
+name. If you're looking for his unsupported package, see [v1.4.1](https://www.npmjs.org/package/immutable/1.4.1).
 
 
 License

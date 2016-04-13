@@ -2,10 +2,12 @@
     "name": "immutable",
     "description": "Immutable Data Collections",
     "repos": "https://github.com/facebook/immutable-js.git",
-    "main": "dist/immutable.js",
+    "main": "immutable.js",
     "tag": "master",
     "reposType": "npm",
     "dependencies": {},
-    "paths": null,
-    "version": "3.6.3"
+    "paths": {
+        "dist": "."
+    },
+    "version": "3.6.4"
 }
