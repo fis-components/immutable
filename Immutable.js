@@ -247,15 +247,15 @@ var $Sequence = Sequence;
     }));
   },
   join: function(separator) {
-    separator = separator || ',';
+    separator = separator !== undefined ? '' + separator : ',';
     var string = '';
     var isFirst = true;
     this.forEach((function(v, k) {
       if (isFirst) {
         isFirst = false;
-        string += v;
+        string += (v != null ? v : '');
       } else {
-        string += separator + v;
+        string += separator + (v != null ? v : '');
       }
     }));
     return string;
@@ -279,8 +279,8 @@ var $Sequence = Sequence;
   },
   concat: function() {
     for (var values = [],
-        $__1 = 0; $__1 < arguments.length; $__1++)
-      values[$__1] = arguments[$__1];
+        $__2 = 0; $__2 < arguments.length; $__2++)
+      values[$__2] = arguments[$__2];
     var sequences = [this].concat(values.map((function(value) {
       return $Sequence(value);
     })));
@@ -361,14 +361,26 @@ var $Sequence = Sequence;
     return this.__iterate(thisArg ? sideEffect.bind(thisArg) : sideEffect);
   },
   reduce: function(reducer, initialReduction, thisArg) {
-    var reduction = initialReduction;
+    var reduction;
+    var useFirst;
+    if (arguments.length < 2) {
+      useFirst = true;
+    } else {
+      reduction = initialReduction;
+    }
     this.forEach((function(v, k, c) {
-      reduction = reducer.call(thisArg, reduction, v, k, c);
+      if (useFirst) {
+        useFirst = false;
+        reduction = v;
+      } else {
+        reduction = reducer.call(thisArg, reduction, v, k, c);
+      }
     }));
     return reduction;
   },
   reduceRight: function(reducer, initialReduction, thisArg) {
-    return this.reverse(true).reduce(reducer, initialReduction, thisArg);
+    var reversed = this.reverse(true);
+    return reversed.reduce.apply(reversed, arguments);
   },
   every: function(predicate, thisArg) {
     var returnValue = true;
@@ -447,33 +459,36 @@ var $Sequence = Sequence;
     flipSequence.flip = (function() {
       return sequence;
     });
-    flipSequence.__iterateUncached = (function(fn, reverse) {
-      return sequence.__iterate((function(v, k, c) {
-        return fn(k, v, c) !== false;
+    flipSequence.__iterateUncached = function(fn, reverse) {
+      var $__0 = this;
+      return sequence.__iterate((function(v, k) {
+        return fn(k, v, $__0) !== false;
       }), reverse);
-    });
+    };
     return flipSequence;
   },
   map: function(mapper, thisArg) {
     var sequence = this;
     var mappedSequence = sequence.__makeSequence();
     mappedSequence.length = sequence.length;
-    mappedSequence.__iterateUncached = (function(fn, reverse) {
+    mappedSequence.__iterateUncached = function(fn, reverse) {
+      var $__0 = this;
       return sequence.__iterate((function(v, k, c) {
-        return fn(mapper.call(thisArg, v, k, c), k, c) !== false;
+        return fn(mapper.call(thisArg, v, k, c), k, $__0) !== false;
       }), reverse);
-    });
+    };
     return mappedSequence;
   },
   mapKeys: function(mapper, thisArg) {
     var sequence = this;
     var mappedSequence = sequence.__makeSequence();
     mappedSequence.length = sequence.length;
-    mappedSequence.__iterateUncached = (function(fn, reverse) {
+    mappedSequence.__iterateUncached = function(fn, reverse) {
+      var $__0 = this;
       return sequence.__iterate((function(v, k, c) {
-        return fn(v, mapper.call(thisArg, k, v, c), c) !== false;
+        return fn(v, mapper.call(thisArg, k, v, c), $__0) !== false;
       }), reverse);
-    });
+    };
     return mappedSequence;
   },
   filter: function(predicate, thisArg) {
@@ -498,12 +513,13 @@ var $Sequence = Sequence;
     }
     var takeSequence = sequence.__makeSequence();
     takeSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
       var iterations = 0;
-      sequence.__iterate((function(v, k, c) {
-        if (iterations < amount && fn(v, k, c) !== false) {
+      sequence.__iterate((function(v, k) {
+        if (iterations < amount && fn(v, k, $__0) !== false) {
           iterations++;
         } else {
           return false;
@@ -521,12 +537,13 @@ var $Sequence = Sequence;
     var sequence = this;
     var takeSequence = sequence.__makeSequence();
     takeSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
       var iterations = 0;
       sequence.__iterate((function(v, k, c) {
-        if (predicate.call(thisArg, v, k, c) && fn(v, k, c) !== false) {
+        if (predicate.call(thisArg, v, k, c) && fn(v, k, $__0) !== false) {
           iterations++;
         } else {
           return false;
@@ -546,15 +563,16 @@ var $Sequence = Sequence;
     }
     var skipSequence = sequence.__makeSequence();
     skipSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
       var isSkipping = true;
       var iterations = 0;
       var skipped = 0;
-      sequence.__iterate((function(v, k, c) {
+      sequence.__iterate((function(v, k) {
         if (!(isSkipping && (isSkipping = skipped++ < amount))) {
-          if (fn(v, k, c) !== false) {
+          if (fn(v, k, $__0) !== false) {
             iterations++;
           } else {
             return false;
@@ -573,6 +591,7 @@ var $Sequence = Sequence;
     var sequence = this;
     var skipSequence = sequence.__makeSequence();
     skipSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
@@ -580,7 +599,7 @@ var $Sequence = Sequence;
       var iterations = 0;
       sequence.__iterate((function(v, k, c) {
         if (!(isSkipping && (isSkipping = predicate.call(thisArg, v, k, c)))) {
-          if (fn(v, k, c) !== false) {
+          if (fn(v, k, $__0) !== false) {
             iterations++;
           } else {
             return false;
@@ -698,31 +717,26 @@ var $IndexedSequence = IndexedSequence;
     fromEntriesSequence.entrySeq = (function() {
       return sequence;
     });
-    fromEntriesSequence.__iterateUncached = (function(fn, reverse, flipIndices) {
-      return sequence.__iterate((function(entry, _, c) {
-        return fn(entry[1], entry[0], c);
+    fromEntriesSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
+      return sequence.__iterate((function(entry) {
+        return entry && fn(entry[1], entry[0], $__0);
       }), reverse, flipIndices);
-    });
+    };
     return fromEntriesSequence;
   },
   join: function(separator) {
-    separator = separator || ',';
-    var string = '';
-    var prevIndex = 0;
-    this.forEach((function(v, i) {
-      var numSeparators = i - prevIndex;
-      prevIndex = i;
-      string += (numSeparators === 1 ? separator : repeatString(separator, numSeparators)) + v;
+    separator = separator !== undefined ? '' + separator : ',';
+    var joined = '';
+    this.forEach((function(v, ii) {
+      joined += (ii ? separator : '') + (v != null ? v : '');
     }));
-    if (this.length && prevIndex < this.length - 1) {
-      string += repeatString(separator, this.length - 1 - prevIndex);
-    }
-    return string;
+    return joined;
   },
   concat: function() {
     for (var values = [],
-        $__2 = 0; $__2 < arguments.length; $__2++)
-      values[$__2] = arguments[$__2];
+        $__3 = 0; $__3 < arguments.length; $__3++)
+      values[$__3] = arguments[$__3];
     var sequences = [this].concat(values).map((function(value) {
       return Sequence(value);
     }));
@@ -731,6 +745,7 @@ var $IndexedSequence = IndexedSequence;
       return sum != null && seq.length != null ? sum + seq.length : undefined;
     }), 0);
     concatSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (flipIndices && !this.length) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
@@ -743,9 +758,9 @@ var $IndexedSequence = IndexedSequence;
         if (!(sequence instanceof $IndexedSequence)) {
           sequence = sequence.valueSeq();
         }
-        iterations += sequence.__iterate((function(v, index, c) {
+        iterations += sequence.__iterate((function(v, index) {
           index += iterations;
-          if (fn(v, flipIndices ? maxIndex - index : index, c) === false) {
+          if (fn(v, flipIndices ? maxIndex - index : index, $__0) === false) {
             stoppedIteration = true;
             return false;
           }
@@ -768,17 +783,18 @@ var $IndexedSequence = IndexedSequence;
     };
     return reversedSequence;
   },
-  valueSeq: function() {
-    var valuesSequence = $traceurRuntime.superCall(this, $IndexedSequence.prototype, "valueSeq", []);
-    valuesSequence.length = undefined;
-    return valuesSequence;
-  },
   filter: function(predicate, thisArg, maintainIndices) {
     var filterSequence = filterFactory(this, predicate, thisArg, maintainIndices, maintainIndices);
     if (maintainIndices) {
       filterSequence.length = this.length;
     }
     return filterSequence;
+  },
+  get: function(index, notSetValue) {
+    index = wrapIndex(this, index);
+    return this.find((function(_, key) {
+      return key === index;
+    }), null, notSetValue);
   },
   indexOf: function(searchValue) {
     return this.findIndex((function(value) {
@@ -806,6 +822,7 @@ var $IndexedSequence = IndexedSequence;
     sliceSequence.length = sequence.length && (maintainIndices ? sequence.length : resolvedEnd - resolvedBegin);
     sliceSequence.__reversedIndices = sequence.__reversedIndices;
     sliceSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
@@ -817,8 +834,8 @@ var $IndexedSequence = IndexedSequence;
       }
       var iiBegin = reversedIndices ? sequence.length - resolvedEnd : resolvedBegin;
       var iiEnd = reversedIndices ? sequence.length - resolvedBegin : resolvedEnd;
-      var lengthIterated = sequence.__iterate((function(v, ii, c) {
-        return reversedIndices ? (iiEnd != null && ii >= iiEnd) || (ii >= iiBegin) && fn(v, maintainIndices ? ii : ii - iiBegin, c) !== false : (ii < iiBegin) || (iiEnd == null || ii < iiEnd) && fn(v, maintainIndices ? ii : ii - iiBegin, c) !== false;
+      var lengthIterated = sequence.__iterate((function(v, ii) {
+        return reversedIndices ? (iiEnd != null && ii >= iiEnd) || (ii >= iiBegin) && fn(v, maintainIndices ? ii : ii - iiBegin, $__0) !== false : (ii < iiBegin) || (iiEnd == null || ii < iiEnd) && fn(v, maintainIndices ? ii : ii - iiBegin, $__0) !== false;
       }), reverse, flipIndices);
       return this.length != null ? this.length : maintainIndices ? lengthIterated : Math.max(0, lengthIterated - iiBegin);
     };
@@ -834,55 +851,26 @@ var $IndexedSequence = IndexedSequence;
     var spliced = this.slice(0, index);
     return numArgs === 1 ? spliced : spliced.concat(arrCopy(arguments, 2), this.slice(index + removeNum));
   },
-  take: function(amount) {
+  flatten: function() {
     var sequence = this;
-    if (amount > sequence.length) {
-      return sequence;
-    }
-    var takeSequence = sequence.__makeSequence();
-    takeSequence.__iterateUncached = function(fn, reverse, flipIndices) {
-      if (reverse) {
+    var flatSequence = sequence.__makeSequence();
+    flatSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
+      if (flipIndices) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
-      var taken = 0;
-      var iterations = 0;
-      var didFinish = true;
-      var length = sequence.__iterate((function(v, ii, c) {
-        if (taken++ < amount && fn(v, ii, c) !== false) {
-          iterations = ii;
-        } else {
-          didFinish = false;
-          return false;
-        }
+      var index = 0;
+      sequence.__iterate((function(seq) {
+        index += Sequence(seq).__iterate((function(v, i) {
+          return fn(v, index + i, $__0) !== false;
+        }), reverse, flipIndices);
       }), reverse, flipIndices);
-      return didFinish ? length : iterations + 1;
+      return index;
     };
-    takeSequence.length = this.length && Math.min(this.length, amount);
-    return takeSequence;
+    return flatSequence;
   },
-  takeWhile: function(predicate, thisArg, maintainIndices) {
-    var sequence = this;
-    var takeSequence = sequence.__makeSequence();
-    takeSequence.__iterateUncached = function(fn, reverse, flipIndices) {
-      if (reverse) {
-        return this.cacheResult().__iterate(fn, reverse, flipIndices);
-      }
-      var iterations = 0;
-      var didFinish = true;
-      var length = sequence.__iterate((function(v, ii, c) {
-        if (predicate.call(thisArg, v, ii, c) && fn(v, ii, c) !== false) {
-          iterations = ii;
-        } else {
-          didFinish = false;
-          return false;
-        }
-      }), reverse, flipIndices);
-      return maintainIndices ? takeSequence.length : didFinish ? length : iterations + 1;
-    };
-    if (maintainIndices) {
-      takeSequence.length = this.length;
-    }
-    return takeSequence;
+  flatMap: function(mapper, thisArg) {
+    return this.map(mapper, thisArg).flatten();
   },
   skip: function(amount, maintainIndices) {
     var sequence = this;
@@ -894,6 +882,7 @@ var $IndexedSequence = IndexedSequence;
       skipSequence.length = this.length;
     }
     skipSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
@@ -901,14 +890,14 @@ var $IndexedSequence = IndexedSequence;
       var isSkipping = true;
       var indexOffset = 0;
       var skipped = 0;
-      var length = sequence.__iterate((function(v, ii, c) {
+      var length = sequence.__iterate((function(v, ii) {
         if (isSkipping) {
           isSkipping = skipped++ < amount;
           if (!isSkipping) {
             indexOffset = ii;
           }
         }
-        return isSkipping || fn(v, flipIndices || maintainIndices ? ii : ii - indexOffset, c) !== false;
+        return isSkipping || fn(v, flipIndices || maintainIndices ? ii : ii - indexOffset, $__0) !== false;
       }), reverse, flipIndices);
       return maintainIndices ? length : reversedIndices ? indexOffset + 1 : length - indexOffset;
     };
@@ -922,6 +911,7 @@ var $IndexedSequence = IndexedSequence;
       skipWhileSequence.length = this.length;
     }
     skipWhileSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+      var $__0 = this;
       if (reverse) {
         return this.cacheResult().__iterate(fn, reverse, flipIndices);
       }
@@ -935,7 +925,7 @@ var $IndexedSequence = IndexedSequence;
             indexOffset = ii;
           }
         }
-        return isSkipping || fn(v, flipIndices || maintainIndices ? ii : ii - indexOffset, c) !== false;
+        return isSkipping || fn(v, flipIndices || maintainIndices ? ii : ii - indexOffset, $__0) !== false;
       }), reverse, flipIndices);
       return maintainIndices ? length : reversedIndices ? indexOffset + 1 : length - indexOffset;
     };
@@ -973,6 +963,7 @@ var $IndexedSequence = IndexedSequence;
 var IndexedSequencePrototype = IndexedSequence.prototype;
 IndexedSequencePrototype.__toJS = IndexedSequencePrototype.toArray;
 IndexedSequencePrototype.__toStringMapper = quoteString;
+IndexedSequencePrototype.chain = IndexedSequencePrototype.flatMap;
 var ObjectSequence = function ObjectSequence(object) {
   var keys = Object.keys(object);
   this._object = object;
@@ -1013,33 +1004,28 @@ var ArraySequence = function ArraySequence(array) {
   toArray: function() {
     return this._array;
   },
+  get: function(index, notSetValue) {
+    return this.has(index) ? this._array[wrapIndex(this, index)] : notSetValue;
+  },
+  has: function(index) {
+    index = wrapIndex(this, index);
+    return index >= 0 && index < this.length;
+  },
   __iterate: function(fn, reverse, flipIndices) {
     var array = this._array;
     var maxIndex = array.length - 1;
-    var lastIndex = -1;
-    if (reverse) {
-      for (var ii = maxIndex; ii >= 0; ii--) {
-        if (array.hasOwnProperty(ii) && fn(array[ii], flipIndices ? ii : maxIndex - ii, array) === false) {
-          return lastIndex + 1;
-        }
-        lastIndex = ii;
+    var ii,
+        rr;
+    var reversedIndices = reverse ^ flipIndices;
+    for (ii = 0; ii <= maxIndex; ii++) {
+      rr = maxIndex - ii;
+      if (fn(array[reverse ? rr : ii], flipIndices ? rr : ii, array) === false) {
+        return reversedIndices ? reverse ? rr : ii : array.length;
       }
-      return array.length;
-    } else {
-      var didFinish = array.every((function(value, index) {
-        if (fn(value, flipIndices ? maxIndex - index : index, array) === false) {
-          return false;
-        } else {
-          lastIndex = index;
-          return true;
-        }
-      }));
-      return didFinish ? array.length : lastIndex + 1;
     }
+    return array.length;
   }
 }, {}, IndexedSequence);
-ArraySequence.prototype.get = ObjectSequence.prototype.get;
-ArraySequence.prototype.has = ObjectSequence.prototype.has;
 var SequenceIterator = function SequenceIterator() {};
 ($traceurRuntime.createClass)(SequenceIterator, {toString: function() {
     return '[Iterator]';
@@ -1096,11 +1082,12 @@ function increment(value) {
 }
 function filterFactory(sequence, predicate, thisArg, useKeys, maintainIndices) {
   var filterSequence = sequence.__makeSequence();
-  filterSequence.__iterateUncached = (function(fn, reverse, flipIndices) {
+  filterSequence.__iterateUncached = function(fn, reverse, flipIndices) {
+    var $__0 = this;
     var iterations = 0;
     var length = sequence.__iterate((function(v, k, c) {
       if (predicate.call(thisArg, v, k, c)) {
-        if (fn(v, useKeys ? k : iterations, c) !== false) {
+        if (fn(v, useKeys ? k : iterations, $__0) !== false) {
           iterations++;
         } else {
           return false;
@@ -1108,7 +1095,7 @@ function filterFactory(sequence, predicate, thisArg, useKeys, maintainIndices) {
       }
     }), reverse, flipIndices);
     return maintainIndices ? length : iterations;
-  });
+  };
   return filterSequence;
 }
 function not(predicate) {
@@ -1119,20 +1106,17 @@ function not(predicate) {
 function quoteString(value) {
   return typeof value === 'string' ? JSON.stringify(value) : value;
 }
-function repeatString(string, times) {
-  var repeated = '';
-  while (times) {
-    if (times & 1) {
-      repeated += string;
-    }
-    if ((times >>= 1)) {
-      string += string;
-    }
-  }
-  return repeated;
-}
 function defaultComparator(a, b) {
   return a > b ? 1 : a < b ? -1 : 0;
+}
+function wrapIndex(seq, index) {
+  if (index < 0) {
+    if (seq.length == null) {
+      seq.cacheResult();
+    }
+    return seq.length + index;
+  }
+  return index;
 }
 function assertNotInfinite(length) {
   invariant(length !== Infinity, 'Cannot perform this action with an infinite sequence.');
@@ -1256,9 +1240,9 @@ var $Map = Map;
     return arguments.length === 1 ? this.updateIn([], null, k) : this.updateIn([k], notSetValue, updater);
   },
   updateIn: function(keyPath, notSetValue, updater) {
-    var $__12;
+    var $__13;
     if (!updater) {
-      ($__12 = [notSetValue, updater], updater = $__12[0], notSetValue = $__12[1], $__12);
+      ($__13 = [notSetValue, updater], updater = $__13[0], notSetValue = $__13[1], $__13);
     }
     return updateInDeepMap(this, keyPath, notSetValue, updater, 0);
   },
@@ -1280,8 +1264,8 @@ var $Map = Map;
   },
   mergeWith: function(merger) {
     for (var seqs = [],
-        $__3 = 1; $__3 < arguments.length; $__3++)
-      seqs[$__3 - 1] = arguments[$__3];
+        $__4 = 1; $__4 < arguments.length; $__4++)
+      seqs[$__4 - 1] = arguments[$__4];
     return mergeIntoMapWith(this, merger, seqs);
   },
   mergeDeep: function() {
@@ -1289,8 +1273,8 @@ var $Map = Map;
   },
   mergeDeepWith: function(merger) {
     for (var seqs = [],
-        $__4 = 1; $__4 < arguments.length; $__4++)
-      seqs[$__4 - 1] = arguments[$__4];
+        $__5 = 1; $__5 < arguments.length; $__5++)
+      seqs[$__5 - 1] = arguments[$__5];
     return mergeIntoMapWith(this, deepMerger(merger), seqs);
   },
   cursor: function(keyPath, onChange) {
@@ -1344,7 +1328,7 @@ var $Map = Map;
     }), reverse);
     return iterations;
   },
-  __deepEqual: function(other) {
+  __deepEquals: function(other) {
     var self = this;
     return other.every((function(v, k) {
       return is(self.get(k, NOT_SET), v);
@@ -1378,12 +1362,12 @@ var BitmapIndexedNode = function BitmapIndexedNode(ownerID, bitmap, nodes) {
 var $BitmapIndexedNode = BitmapIndexedNode;
 ($traceurRuntime.createClass)(BitmapIndexedNode, {
   get: function(shift, hash, key, notSetValue) {
-    var bit = (1 << ((hash >>> shift) & MASK));
+    var bit = (1 << ((shift === 0 ? hash : hash >>> shift) & MASK));
     var bitmap = this.bitmap;
     return (bitmap & bit) === 0 ? notSetValue : this.nodes[popCount(bitmap & (bit - 1))].get(shift + SHIFT, hash, key, notSetValue);
   },
   update: function(ownerID, shift, hash, key, value, didChangeLength, didAlter) {
-    var hashFrag = (hash >>> shift) & MASK;
+    var hashFrag = (shift === 0 ? hash : hash >>> shift) & MASK;
     var bit = 1 << hashFrag;
     var bitmap = this.bitmap;
     var exists = (bitmap & bit) !== 0;
@@ -1434,12 +1418,12 @@ var ArrayNode = function ArrayNode(ownerID, count, nodes) {
 var $ArrayNode = ArrayNode;
 ($traceurRuntime.createClass)(ArrayNode, {
   get: function(shift, hash, key, notSetValue) {
-    var idx = (hash >>> shift) & MASK;
+    var idx = (shift === 0 ? hash : hash >>> shift) & MASK;
     var node = this.nodes[idx];
     return node ? node.get(shift + SHIFT, hash, key, notSetValue) : notSetValue;
   },
   update: function(ownerID, shift, hash, key, value, didChangeLength, didAlter) {
-    var idx = (hash >>> shift) & MASK;
+    var idx = (shift === 0 ? hash : hash >>> shift) & MASK;
     var removed = value === NOT_SET;
     var nodes = this.nodes;
     var node = nodes[idx];
@@ -1676,8 +1660,8 @@ function mergeIntoNode(node, ownerID, shift, hash, entry) {
   if (node.hash === hash) {
     return new HashCollisionNode(ownerID, hash, [node.entry, entry]);
   }
-  var idx1 = (node.hash >>> shift) & MASK;
-  var idx2 = (hash >>> shift) & MASK;
+  var idx1 = (shift === 0 ? node.hash : node.hash >>> shift) & MASK;
+  var idx2 = (shift === 0 ? hash : hash >>> shift) & MASK;
   var newNode;
   var nodes = idx1 === idx2 ? [mergeIntoNode(node, ownerID, shift + SHIFT, hash, entry)] : ((newNode = new ValueNode(ownerID, hash, entry)), idx1 < idx2 ? [node, newNode] : [newNode, node]);
   return new BitmapIndexedNode(ownerID, (1 << idx1) | (1 << idx2), nodes);
@@ -1799,8 +1783,8 @@ var MIN_ARRAY_SIZE = SIZE / 4;
 var EMPTY_MAP;
 var Vector = function Vector() {
   for (var values = [],
-      $__5 = 0; $__5 < arguments.length; $__5++)
-    values[$__5] = arguments[$__5];
+      $__6 = 0; $__6 < arguments.length; $__6++)
+    values[$__6] = arguments[$__6];
   return $Vector.from(values);
 };
 var $Vector = Vector;
@@ -1808,14 +1792,18 @@ var $Vector = Vector;
   toString: function() {
     return this.__toString('Vector [', ']');
   },
+  has: function(index) {
+    index = wrapIndex(this, index);
+    return index >= 0 && index < this.length;
+  },
   get: function(index, notSetValue) {
-    index = rawIndex(index, this._origin);
-    if (index >= this._size) {
+    index = wrapIndex(this, index);
+    if (index < 0 || index >= this.length) {
       return notSetValue;
     }
+    index += this._origin;
     var node = vectorNodeFor(this, index);
-    var maskedIndex = index & MASK;
-    return node && (notSetValue === undefined || node.array.hasOwnProperty(maskedIndex)) ? node.array[maskedIndex] : notSetValue;
+    return node && node.array[index & MASK];
   },
   first: function() {
     return this.get(0);
@@ -1873,8 +1861,8 @@ var $Vector = Vector;
   },
   mergeWith: function(merger) {
     for (var seqs = [],
-        $__6 = 1; $__6 < arguments.length; $__6++)
-      seqs[$__6 - 1] = arguments[$__6];
+        $__7 = 1; $__7 < arguments.length; $__7++)
+      seqs[$__7 - 1] = arguments[$__7];
     return mergeIntoVectorWith(this, merger, seqs);
   },
   mergeDeep: function() {
@@ -1882,8 +1870,8 @@ var $Vector = Vector;
   },
   mergeDeepWith: function(merger) {
     for (var seqs = [],
-        $__7 = 1; $__7 < arguments.length; $__7++)
-      seqs[$__7 - 1] = arguments[$__7];
+        $__8 = 1; $__8 < arguments.length; $__8++)
+      seqs[$__8 - 1] = arguments[$__8];
     return mergeIntoVectorWith(this, deepMerger(merger), seqs);
   },
   setLength: function(length) {
@@ -1900,17 +1888,17 @@ var $Vector = Vector;
     }
     return sliceSequence;
   },
-  keys: function(sparse) {
-    return new VectorIterator(this, 0, sparse);
+  keys: function() {
+    return new VectorIterator(this, 0);
   },
-  values: function(sparse) {
-    return new VectorIterator(this, 1, sparse);
+  values: function() {
+    return new VectorIterator(this, 1);
   },
-  entries: function(sparse) {
-    return new VectorIterator(this, 2, sparse);
+  entries: function() {
+    return new VectorIterator(this, 2);
   },
-  __iterator: function(reverse, flipIndices, sparse) {
-    return new VectorIterator(this, 2, sparse, reverse, flipIndices);
+  __iterator: function(reverse, flipIndices) {
+    return new VectorIterator(this, 2, reverse, flipIndices);
   },
   __iterate: function(fn, reverse, flipIndices) {
     var vector = this;
@@ -2014,7 +2002,7 @@ var $VNode = VNode;
     var editable = editableVNode(this, ownerID);
     if (!removingFirst) {
       for (var ii = 0; ii < originIndex; ii++) {
-        delete editable.array[ii];
+        editable.array[ii] = undefined;
       }
     }
     if (newChild) {
@@ -2044,7 +2032,7 @@ var $VNode = VNode;
     }
     var editable = editableVNode(this, ownerID);
     if (!removingLast) {
-      editable.array.length = sizeIndex + 1;
+      editable.array.pop();
     }
     if (newChild) {
       editable.array[sizeIndex] = newChild;
@@ -2053,40 +2041,38 @@ var $VNode = VNode;
   }
 }, {});
 function iterateVNode(node, level, offset, max, fn, reverse) {
-  if (node) {
-    var ii;
-    var array = node.array;
-    var maxII = array.length - 1;
-    if (level === 0) {
-      for (ii = 0; ii <= maxII; ii++) {
-        var rawIndex = reverse ? maxII - ii : ii;
-        if (array.hasOwnProperty(rawIndex)) {
-          var index = rawIndex + offset;
-          if (index >= 0 && index < max && fn(array[rawIndex], index) === false) {
-            return false;
-          }
-        }
+  var ii;
+  var array = node && node.array;
+  if (level === 0) {
+    var from = offset < 0 ? 0 : offset;
+    var to = offset + SIZE;
+    if (to > max) {
+      to = max;
+    }
+    for (ii = from; ii < to; ii++) {
+      var index = reverse ? from + to - 1 - ii : ii;
+      if (fn(array && array[index - offset], index) === false) {
+        return false;
       }
-    } else {
-      var step = 1 << level;
-      var newLevel = level - SHIFT;
-      for (ii = 0; ii <= maxII; ii++) {
-        var levelIndex = reverse ? maxII - ii : ii;
-        var newOffset = offset + levelIndex * step;
-        if (newOffset < max && newOffset + step > 0) {
-          var nextNode = array[levelIndex];
-          if (nextNode && !iterateVNode(nextNode, newLevel, newOffset, max, fn, reverse)) {
-            return false;
-          }
+    }
+  } else {
+    var step = 1 << level;
+    var newLevel = level - SHIFT;
+    for (ii = 0; ii <= MASK; ii++) {
+      var levelIndex = reverse ? MASK - ii : ii;
+      var newOffset = offset + (levelIndex << level);
+      if (newOffset < max && newOffset + step > 0) {
+        var nextNode = array && array[levelIndex];
+        if (!iterateVNode(nextNode, newLevel, newOffset, max, fn, reverse)) {
+          return false;
         }
       }
     }
   }
   return true;
 }
-var VectorIterator = function VectorIterator(vector, type, sparse, reverse, flipIndices) {
+var VectorIterator = function VectorIterator(vector, type, reverse, flipIndices) {
   this._type = type;
-  this._sparse = !!sparse;
   this._reverse = !!reverse;
   this._flipIndices = !!(flipIndices ^ reverse);
   this._maxIndex = vector.length - 1;
@@ -2097,7 +2083,6 @@ var VectorIterator = function VectorIterator(vector, type, sparse, reverse, flip
   this._stack.__prev = reverse ? rootStack : tailStack;
 };
 ($traceurRuntime.createClass)(VectorIterator, {next: function() {
-    var sparse = this._sparse;
     var stack = this._stack;
     while (stack) {
       var array = stack.array;
@@ -2112,18 +2097,16 @@ var VectorIterator = function VectorIterator(vector, type, sparse, reverse, flip
       if (rawIndex >= 0 && rawIndex < SIZE && rawIndex <= stack.rawMax) {
         var value = array && array[rawIndex];
         if (stack.level === 0) {
-          if (!sparse || value != null || (array && rawIndex < array.length && array.hasOwnProperty(rawIndex))) {
-            var type = this._type;
-            var index;
-            if (type !== 1) {
-              index = stack.offset + (rawIndex << stack.level);
-              if (this._flipIndices) {
-                index = this._maxIndex - index;
-              }
+          var type = this._type;
+          var index;
+          if (type !== 1) {
+            index = stack.offset + (rawIndex << stack.level);
+            if (this._flipIndices) {
+              index = this._maxIndex - index;
             }
-            return iteratorValue(type === 0 ? index : type === 1 ? value : [index, value]);
           }
-        } else if (!sparse || value != null) {
+          return iteratorValue(type === 0 ? index : type === 1 ? value : [index, value]);
+        } else {
           this._stack = stack = vectIteratorFrame(value && value.array, stack.level - SHIFT, stack.offset + (rawIndex << stack.level), stack.max, stack);
         }
         continue;
@@ -2157,12 +2140,13 @@ function makeVector(origin, size, level, root, tail, ownerID, hash) {
   return vect;
 }
 function updateVector(vector, index, value) {
-  if (index >= vector.length) {
+  index = wrapIndex(vector, index);
+  if (index >= vector.length || index < 0) {
     return value === NOT_SET ? vector : vector.withMutations((function(vect) {
-      setVectorBounds(vect, 0, index + 1).set(index, value);
+      index < 0 ? setVectorBounds(vect, index).set(0, value) : setVectorBounds(vect, 0, index + 1).set(index, value);
     }));
   }
-  index = rawIndex(index, vector._origin);
+  index += vector._origin;
   var newTail = vector._tail;
   var newRoot = vector._root;
   var didAlter = MakeRef(DID_ALTER);
@@ -2187,7 +2171,7 @@ function updateVNode(node, ownerID, level, index, value, didAlter) {
   var removed = value === NOT_SET;
   var newNode;
   var idx = (index >>> level) & MASK;
-  var nodeHas = node && idx < node.array.length && node.array.hasOwnProperty(idx);
+  var nodeHas = node && idx < node.array.length;
   if (removed && !nodeHas) {
     return node;
   }
@@ -2206,7 +2190,11 @@ function updateVNode(node, ownerID, level, index, value, didAlter) {
   }
   SetRef(didAlter);
   newNode = editableVNode(node, ownerID);
-  removed ? (delete newNode.array[idx]) : (newNode.array[idx] = value);
+  if (removed && idx === newNode.array.length - 1) {
+    newNode.array.pop();
+  } else {
+    newNode.array[idx] = removed ? undefined : value;
+  }
   return newNode;
 }
 function editableVNode(node, ownerID) {
@@ -2334,18 +2322,14 @@ function mergeIntoVectorWith(vector, merger, iterables) {
   }
   return mergeIntoCollectionWith(vector, merger, seqs);
 }
-function rawIndex(index, origin) {
-  invariant(index >= 0, 'Index out of bounds');
-  return index + origin;
-}
 function getTailOffset(size) {
   return size < SIZE ? 0 : (((size - 1) >>> SHIFT) << SHIFT);
 }
 var EMPTY_VECT;
 var Set = function Set() {
   for (var values = [],
-      $__8 = 0; $__8 < arguments.length; $__8++)
-    values[$__8] = arguments[$__8];
+      $__9 = 0; $__9 < arguments.length; $__9++)
+    values[$__9] = arguments[$__9];
   return $Set.from(values);
 };
 var $Set = Set;
@@ -2403,8 +2387,8 @@ var $Set = Set;
   },
   intersect: function() {
     for (var seqs = [],
-        $__9 = 0; $__9 < arguments.length; $__9++)
-      seqs[$__9] = arguments[$__9];
+        $__10 = 0; $__10 < arguments.length; $__10++)
+      seqs[$__10] = arguments[$__10];
     if (seqs.length === 0) {
       return this;
     }
@@ -2424,8 +2408,8 @@ var $Set = Set;
   },
   subtract: function() {
     for (var seqs = [],
-        $__10 = 0; $__10 < arguments.length; $__10++)
-      seqs[$__10] = arguments[$__10];
+        $__11 = 0; $__11 < arguments.length; $__11++)
+      seqs[$__11] = arguments[$__11];
     if (seqs.length === 0) {
       return this;
     }
@@ -2470,14 +2454,14 @@ var $Set = Set;
   hashCode: function() {
     return this._map.hashCode();
   },
-  equals: function(other) {
-    return this._map.equals(other._map);
-  },
   __iterate: function(fn, reverse) {
     var collection = this;
     return this._map.__iterate((function(_, k) {
       return fn(k, k, collection);
     }), reverse);
+  },
+  __deepEquals: function(other) {
+    return this.isSuperset(other);
   },
   __ensureOwner: function(ownerID) {
     if (ownerID === this.__ownerID) {
@@ -2510,8 +2494,8 @@ SetPrototype.contains = SetPrototype.has;
 SetPrototype.mergeDeep = SetPrototype.merge = SetPrototype.union;
 SetPrototype.mergeDeepWith = SetPrototype.mergeWith = function(merger) {
   for (var seqs = [],
-      $__11 = 1; $__11 < arguments.length; $__11++)
-    seqs[$__11 - 1] = arguments[$__11];
+      $__12 = 1; $__12 < arguments.length; $__12++)
+    seqs[$__12 - 1] = arguments[$__12];
   return this.merge.apply(this, seqs);
 };
 SetPrototype.withMutations = MapPrototype.withMutations;
@@ -2577,7 +2561,7 @@ var $OrderedMap = OrderedMap;
   __iterate: function(fn, reverse) {
     return this._vector.fromEntrySeq().__iterate(fn, reverse);
   },
-  __deepEqual: function(other) {
+  __deepEquals: function(other) {
     var iterator = this.entries();
     return other.every((function(v, k) {
       var entry = iterator.next().value;
@@ -2751,7 +2735,7 @@ RecordPrototype.cursor = MapPrototype.cursor;
 RecordPrototype.withMutations = MapPrototype.withMutations;
 RecordPrototype.asMutable = MapPrototype.asMutable;
 RecordPrototype.asImmutable = MapPrototype.asImmutable;
-RecordPrototype.__deepEqual = MapPrototype.__deepEqual;
+RecordPrototype.__deepEquals = MapPrototype.__deepEquals;
 function makeRecord(likeRecord, map, ownerID) {
   var record = Object.create(Object.getPrototypeOf(likeRecord));
   record._map = map;
@@ -2788,12 +2772,12 @@ var $Range = Range;
     return 'Range [ ' + this._start + '...' + this._end + (this._step > 1 ? ' by ' + this._step : '') + ' ]';
   },
   has: function(index) {
-    invariant(index >= 0, 'Index out of bounds');
-    return index < this.length;
+    index = wrapIndex(this, index);
+    return index >= 0 && (this.length === Infinity || index < this.length);
   },
   get: function(index, notSetValue) {
-    invariant(index >= 0, 'Index out of bounds');
-    return this.length === Infinity || index < this.length ? this._start + index * this._step : notSetValue;
+    index = wrapIndex(this, index);
+    return this.has(index) ? this._start + index * this._step : notSetValue;
   },
   contains: function(searchValue) {
     var possibleIndex = (searchValue - this._start) / this._step;
@@ -2833,17 +2817,16 @@ var $Range = Range;
     return maintainIndices ? $traceurRuntime.superCall(this, $Range.prototype, "skip", [amount]) : this.slice(amount);
   },
   __iterate: function(fn, reverse, flipIndices) {
-    var reversedIndices = reverse ^ flipIndices;
     var maxIndex = this.length - 1;
     var step = this._step;
     var value = reverse ? this._start + maxIndex * step : this._start;
     for (var ii = 0; ii <= maxIndex; ii++) {
-      if (fn(value, reversedIndices ? maxIndex - ii : ii, this) === false) {
+      if (fn(value, flipIndices ? maxIndex - ii : ii, this) === false) {
         break;
       }
       value += reverse ? -step : step;
     }
-    return reversedIndices ? this.length : ii;
+    return flipIndices ? this.length : ii;
   },
   __deepEquals: function(other) {
     return this._start === other._start && this._end === other._end && this._step === other._step;
@@ -2873,8 +2856,7 @@ var $Repeat = Repeat;
     return 'Repeat [ ' + this._value + ' ' + this.length + ' times ]';
   },
   get: function(index, notSetValue) {
-    invariant(index >= 0, 'Index out of bounds');
-    return this.length === Infinity || index < this.length ? this._value : notSetValue;
+    return this.has(index) ? this._value : notSetValue;
   },
   first: function() {
     return this._value;

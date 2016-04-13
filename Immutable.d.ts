@@ -271,7 +271,7 @@ declare module 'immutable' {
     keySeq(): IndexedSequence<K>;
 
     /**
-     * Returns a new indexed sequence of the keys of this sequence,
+     * Returns a new indexed sequence of the values of this sequence,
      * discarding keys.
      */
     valueSeq(): IndexedSequence<V>;
@@ -296,6 +296,11 @@ declare module 'immutable' {
     /**
      * Reduces the sequence to a value by calling the `reducer` for every entry
      * in the sequence and passing along the reduced value.
+     *
+     * If `initialReduction` is not provided, or is null, the first item in the
+     * sequence will be used.
+     *
+     * @see `Array.prototype.reduce`.
      */
     reduce<R>(
       reducer: (reduction?: R, value?: V, key?: K, seq?: Sequence<K, V>) => R,
@@ -311,7 +316,7 @@ declare module 'immutable' {
      */
     reduceRight<R>(
       reducer: (reduction?: R, value?: V, key?: K, seq?: Sequence<K, V>) => R,
-      initialReduction: R,
+      initialReduction?: R,
       thisArg?: any
     ): R;
 
@@ -661,6 +666,9 @@ declare module 'immutable' {
      * with new values. If values are not provided, it only skips the region to
      * be removed.
      *
+     * `index` may be a negative number, which indexes back from the end of the
+     * Sequence. `s.splice(-2)` splices after the second to last item.
+     *
      *     Sequence(['a','b','c','d']).splice(1, 2, 'q', 'r', 's')
      *     // ['a', 'q', 'r', 's', 'd']
      *
@@ -680,6 +688,15 @@ declare module 'immutable' {
      * @override
      */
     toVector(): Vector<T>;
+
+    /**
+     * Returns the value associated with the provided index, or notSetValue if
+     * the index is beyond the bounds of the sequence.
+     *
+     * `index` may be a negative number, which indexes back from the end of the
+     * Sequence. `s.get(-1)` gets the last item in the Sequence.
+     */
+    get(index: number, notSetValue?: T): T;
 
     /**
      * This new behavior will iterate through the values and sequences with
@@ -715,30 +732,32 @@ declare module 'immutable' {
      */
     slice(start: number, end?: number, maintainIndices?: boolean): IndexedSequence<T>;
 
+
     /**
-     * Has the same altered behavior as `takeWhile`.
-     * @override
+     * Flattens nested Sequences by one level.
+     *
+     * Note: `flatten` operates on IndexedSequence<IndexedSequence<T>> and
+     * returns IndexedSequence<T>
      */
-    take(amount: number, maintainIndices?: boolean): IndexedSequence<T>;
+    flatten(): IndexedSequence<any>;
+
+    /**
+     * Flat-maps the Sequence.
+     */
+    flatMap<M>(
+      mapper: (value?: T, index?: number, seq?: IndexedSequence<T>) => IndexedSequence<M>,
+      thisArg?: any
+    ): IndexedSequence<M>;
+    flatMap<M>(
+      mapper: (value?: T, index?: number, seq?: IndexedSequence<T>) => M[],
+      thisArg?: any
+    ): IndexedSequence<M>;
 
     /**
      * Has the same altered behavior as `takeWhile`.
      * @override
      */
     takeLast(amount: number, maintainIndices?: boolean): IndexedSequence<T>;
-
-    /**
-     * Indexed sequences have a different `takeWhile` behavior. The first
-     * value will have an index of 0 and the length of the sequence could be
-     * truncated. If you want to preserve the original indicies, set
-     * maintainIndices to true.
-     * @override
-     */
-    takeWhile(
-      predicate: (value?: T, index?: number, seq?: IndexedSequence<T>) => boolean,
-      thisArg?: any,
-      maintainIndices?: boolean
-    ): IndexedSequence<T>;
 
     /**
      * Has the same altered behavior as `takeWhile`.
@@ -1033,27 +1052,27 @@ declare module 'immutable' {
      *
      *     var x = Immutable.fromJS({a: { x: 10, y: 10 }, b: { x: 20, y: 50 } });
      *     var y = Immutable.fromJS({a: { x: 2 }, b: { y: 5 }, c: { z: 3 } });
-     *     x.deepMerge(y) // {a: { x: 2, y: 10 }, b: { x: 20, y: 5 }, c: { z: 3 } }
+     *     x.mergeDeep(y) // {a: { x: 2, y: 10 }, b: { x: 20, y: 5 }, c: { z: 3 } }
      *
      */
-    deepMerge(...sequences: Sequence<K, V>[]): Map<K, V>;
-    deepMerge(...sequences: {[key: string]: V}[]): Map<string, V>;
+    mergeDeep(...sequences: Sequence<K, V>[]): Map<K, V>;
+    mergeDeep(...sequences: {[key: string]: V}[]): Map<string, V>;
 
     /**
-     * Like `deepMerge()`, but when two non-Sequences conflict, it uses the
+     * Like `mergeDeep()`, but when two non-Sequences conflict, it uses the
      * `merger` function to determine the resulting value.
      *
      *     var x = Immutable.fromJS({a: { x: 10, y: 10 }, b: { x: 20, y: 50 } });
      *     var y = Immutable.fromJS({a: { x: 2 }, b: { y: 5 }, c: { z: 3 } });
-     *     x.deepMergeWith((prev, next) => prev / next, y)
+     *     x.mergeDeepWith((prev, next) => prev / next, y)
      *     // {a: { x: 5, y: 10 }, b: { x: 20, y: 10 }, c: { z: 3 } }
      *
      */
-    deepMergeWith(
+    mergeDeepWith(
       merger: (previous?: V, next?: V) => V,
       ...sequences: Sequence<K, V>[]
     ): Map<K, V>;
-    deepMergeWith(
+    mergeDeepWith(
       merger: (previous?: V, next?: V) => V,
       ...sequences: {[key: string]: V}[]
     ): Map<string, V>;
@@ -1377,12 +1396,18 @@ declare module 'immutable' {
     /**
      * Returns a new Vector which includes `value` at `index`. If `index` already
      * exists in this Vector, it will be replaced.
+     *
+     * `index` may be a negative number, which indexes back from the end of the
+     * Vector. `v.set(-1, "value")` sets the last item in the Vector.
      */
     set(index: number, value: T): Vector<T>;
 
     /**
      * Returns a new Vector which excludes this `index`. It will not affect the
      * length of the Vector, instead leaving a sparse hole.
+     *
+     * `index` may be a negative number, which indexes back from the end of the
+     * Vector. `v.delete(-1)` deletes the last item in the Vector.
      *
      * Note: `delete` cannot be safely used in IE8
      * @alias delete
@@ -1466,6 +1491,9 @@ declare module 'immutable' {
      * `index` was not set. If called with a single argument, `updater` is
      * called with the Vector itself.
      *
+     * `index` may be a negative number, which indexes back from the end of the
+     * Vector. `v.update(-1)` updates the last item in the Vector.
+     *
      * @see Map.update
      */
     update(updater: (value: Vector<T>) => Vector<T>): Vector<T>;
@@ -1504,19 +1532,19 @@ declare module 'immutable' {
     ): Vector<T>;
 
     /**
-     * @see `Map.prototype.deepMerge`
+     * @see `Map.prototype.mergeDeep`
      */
-    deepMerge(...sequences: IndexedSequence<T>[]): Vector<T>;
-    deepMerge(...sequences: Array<T>[]): Vector<T>;
+    mergeDeep(...sequences: IndexedSequence<T>[]): Vector<T>;
+    mergeDeep(...sequences: Array<T>[]): Vector<T>;
 
     /**
-     * @see `Map.prototype.deepMergeWith`
+     * @see `Map.prototype.mergeDeepWith`
      */
-    deepMergeWith(
+    mergeDeepWith(
       merger: (previous?: T, next?: T) => T,
       ...sequences: IndexedSequence<T>[]
     ): Vector<T>;
-    deepMergeWith(
+    mergeDeepWith(
       merger: (previous?: T, next?: T) => T,
       ...sequences: Array<T>[]
     ): Vector<T>;
