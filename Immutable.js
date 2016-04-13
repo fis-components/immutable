@@ -679,12 +679,13 @@ var $IndexedSequence = IndexedSequence;
     return this.get(this.length ? this.length - 1 : 0);
   },
   skip: function(amount) {
-    var $__0 = this;
-    var skipSeq = skipFactory(this, amount, false);
-    if (skipSeq !== this) {
-      skipSeq.get = (function(index, notSetValue) {
-        return $__0.get(index + amount, notSetValue);
-      });
+    var seq = this;
+    var skipSeq = skipFactory(seq, amount, false);
+    if (skipSeq !== seq) {
+      skipSeq.get = function(index, notSetValue) {
+        index = wrapIndex(this, index);
+        return index >= 0 ? seq.get(index + amount, notSetValue) : notSetValue;
+      };
     }
     return skipSeq;
   },
@@ -699,12 +700,13 @@ var $IndexedSequence = IndexedSequence;
     }))).fromEntrySeq().valueSeq();
   },
   take: function(amount) {
-    var $__0 = this;
-    var takeSeq = takeFactory(this, amount);
-    if (takeSeq !== this) {
-      takeSeq.get = (function(index, notSetValue) {
-        return index < amount ? $__0.get(index, notSetValue) : notSetValue;
-      });
+    var seq = this;
+    var takeSeq = takeFactory(seq, amount);
+    if (takeSeq !== seq) {
+      takeSeq.get = function(index, notSetValue) {
+        index = wrapIndex(this, index);
+        return index >= 0 && index < amount ? seq.get(index, notSetValue) : notSetValue;
+      };
     }
     return takeSeq;
   },
@@ -3268,8 +3270,7 @@ var $Range = Range;
     return 'Range [ ' + this._start + '...' + this._end + (this._step > 1 ? ' by ' + this._step : '') + ' ]';
   },
   get: function(index, notSetValue) {
-    index = wrapIndex(this, index);
-    return this.has(index) ? this._start + index * this._step : notSetValue;
+    return this.has(index) ? this._start + wrapIndex(this, index) * this._step : notSetValue;
   },
   contains: function(searchValue) {
     var possibleIndex = (searchValue - this._start) / this._step;
