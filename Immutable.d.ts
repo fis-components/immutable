@@ -202,6 +202,15 @@ declare module 'immutable' {
     toSet(): Set<V>;
 
     /**
+     * Converts this sequence to a Stack, discarding keys. Throws if values
+     * are not hashable.
+     *
+     * Note: This is equivalent to `Stack.from(this)`, but provided to allow for
+     * chained expressions.
+     */
+    toStack(): Stack<V>;
+
+    /**
      * Converts this sequence to a Vector, discarding keys.
      *
      * Note: This is equivalent to `Vector.from(this)`, but provided to allow
@@ -486,12 +495,21 @@ declare module 'immutable' {
     ): Sequence<MK, MV>;
 
     /**
-     * Flattens nested Sequences by one level.
+     * Flattens nested Sequences.
      *
-     * Note: `flatten` operates on Sequence<any, Sequence<K, V>> and
+     * Will deeply flatten the Sequence by default, but a `depth` can be
+     * provided in the form of a number or boolean (where true means to
+     * shallowly flatten one level). A depth of 0 (or shallow: false) will
+     * deeply flatten.
+     *
+     * Flattens anything Sequencible (Arrays, Objects) with the exception of
+     * Strings.
+     *
+     * Note: `flatten(true)` operates on Sequence<any, Sequence<K, V>> and
      * returns Sequence<K, V>
      */
-    flatten(): Sequence<any, any>;
+    flatten(depth?: number): Sequence<any, any>;
+    flatten(shallow?: boolean): Sequence<any, any>;
 
     /**
      * Returns a new sequence with this sequences's keys as it's values, and this
@@ -515,7 +533,7 @@ declare module 'immutable' {
     /**
      * Returns the value found by following a key path through nested sequences.
      */
-    getIn(searchKeyPath: Array<K>, notSetValue?: V): V;
+    getIn(searchKeyPath: Array<any>, notSetValue?: any): any;
 
     /**
      * Returns a `Sequence` of `Sequences`, grouped by the return value of the
@@ -949,7 +967,8 @@ declare module 'immutable' {
      * Returns IndexedSequence<T>
      * @override
      */
-    flatten(): IndexedSequence<any>;
+    flatten(depth?: number): IndexedSequence<any>;
+    flatten(shallow?: boolean): IndexedSequence<any>;
 
     /**
      * If this is a sequence of entries (key-value tuples), it will return a
@@ -1187,24 +1206,6 @@ declare module 'immutable' {
     clear(): Map<K, V>;
 
     /**
-     * When this cursor's (or any of its sub-cursors') `update` method is called,
-     * the resulting new data structure will be provided to the `onChange`
-     * function. Use this callback to keep track of the most current value or
-     * update the rest of your application.
-     */
-    cursor(
-      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
-    ): Cursor<Map<K, V>>;
-    cursor(
-      keyPath: Array<any>,
-      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
-    ): Cursor<any>;
-    cursor(
-      key: K,
-      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
-    ): Cursor<V>;
-
-    /**
      * Returns a new Map having updated the value at this `key` with the return
      * value of calling `updater` with the existing value, or `notSetValue` if
      * the key was not set. If called with only a single argument, `updater` is
@@ -1343,6 +1344,24 @@ declare module 'immutable' {
      * copy has become immutable and can be safely returned from a function.
      */
     asImmutable(): Map<K, V>;
+
+    /**
+     * When this cursor's (or any of its sub-cursors') `update` method is called,
+     * the resulting new data structure will be provided to the `onChange`
+     * function. Use this callback to keep track of the most current value or
+     * update the rest of your application.
+     */
+    cursor(
+      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
+    ): Cursor<Map<K, V>>;
+    cursor(
+      keyPath: Array<any>,
+      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
+    ): Cursor<any>;
+    cursor(
+      key: K,
+      onChange?: (newValue: Map<K, V>, oldValue?: Map<K, V>, keyPath?: Array<any>) => void
+    ): Cursor<V>;
   }
 
 
@@ -1661,22 +1680,6 @@ declare module 'immutable' {
     shift(): Vector<T>;
 
     /**
-     * @see Map.cursor
-     */
-    cursor(
-      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
-    ): Cursor<Vector<T>>;
-    cursor(
-      keyPath: Array<any>,
-      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
-    ): Cursor<any>;
-    cursor(
-      key: number,
-      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
-    ): Cursor<T>;
-
-
-    /**
      * Returns a new Vector with an updated value at `index` with the return
      * value of calling `updater` with the existing value, or `notSetValue` if
      * `index` was not set. If called with a single argument, `updater` is
@@ -1762,6 +1765,21 @@ declare module 'immutable' {
      * @see `Map.prototype.asImmutable`
      */
     asImmutable(): Vector<T>;
+
+    /**
+     * @see Map.cursor
+     */
+    cursor(
+      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
+    ): Cursor<Vector<T>>;
+    cursor(
+      keyPath: Array<any>,
+      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
+    ): Cursor<any>;
+    cursor(
+      key: number,
+      onChange?: (newValue: Vector<T>, oldValue?: Vector<T>, keyPath?: Array<any>) => void
+    ): Cursor<T>;
   }
 
 
@@ -1842,6 +1860,12 @@ declare module 'immutable' {
      * Alias for `Stack#unshift` and is not equivalent to `Vector#push`.
      */
     push(...values: T[]): Stack<T>;
+
+    /**
+     * Alias for `Stack#unshiftAll`.
+     */
+    pushAll(seq: Sequence<any, T>): Stack<T>;
+    pushAll(seq: Array<T>): Stack<T>;
 
     /**
      * Alias for `Stack#shift` and is not equivalent to `Vector#pop`.
