@@ -238,6 +238,29 @@ declare module 'immutable' {
     toSet(): Set<V>;
 
     /**
+     * Returns a new Sequence identical to this one, but does not behave as
+     * indexed. Instead the indices are treated as keys. This is useful if you
+     * want to operate on an IndexedSequence and preserve the index, value
+     * pairs.
+     *
+     * This is the generalized (and lazy) form of converting a Vector to Map.
+     *
+     * The returned Sequence will have identical iteration order as
+     * this Sequence.
+     *
+     * For already Keyed sequences, simply returns itself.
+     *
+     * Example:
+     *
+     *     var indexedSeq = Immutable.Sequence('A', 'B', 'C');
+     *     indexedSeq.filter(v => v === 'B').toString() // Seq [ 'B' ]
+     *     var keyedSeq = indexedSeq.toKeyedSeq();
+     *     keyedSeq.filter(v => v === 'B').toString() // Seq { 1: 'B' }
+     *
+     */
+    toKeyedSeq(): Sequence<K, V>;
+
+    /**
      * True if this and the other sequence have value equality, as defined
      * by `Immutable.is()`.
      *
@@ -286,7 +309,7 @@ declare module 'immutable' {
      *
      * Unlike `Array.prototype.forEach`, if any call of `sideEffect` returns
      * `false`, the iteration will stop. Returns the length of the sequence which
-     * was iterated.
+     * was iterated (including the last iteration which returned false).
      */
     forEach(
       sideEffect: (value?: V, key?: K, seq?: Sequence<K, V>) => any,
@@ -451,6 +474,20 @@ declare module 'immutable' {
     ): Sequence<M, V>;
 
     /**
+     * Returns a new sequence with entries ([key, value] tuples) passed through
+     * a `mapper` function.
+     *
+     *     Sequence({ a: 1, b: 2 })
+     *       .mapEntries(([k, v]) => [k.toUpperCase(), v * 2])
+     *     // { A: 2, B: 4 }
+     *
+     */
+    mapEntries<KM, VM>(
+      mapper: (entry?: /*(K, V)*/Array<any>, index?: number, seq?: Sequence<K, V>) => /*(KM, VM)*/Array<any>,
+      thisArg?: any
+    ): Sequence<KM, VM>;
+
+    /**
      * Returns a new sequence with only the entries for which the `predicate`
      * function returns true.
      *
@@ -561,26 +598,26 @@ declare module 'immutable' {
     ): Sequence<K, V>;
 
     /**
-     * Returns a `Map` of counts, grouped by the return value of the
+     * Returns a `Sequence` of counts, grouped by the return value of the
      * `grouper` function.
      *
-     * Note: Because this returns a Map, this method is not lazy.
+     * Note: This is not a lazy operation.
      */
     countBy<G>(
       grouper: (value?: V, key?: K, seq?: Sequence<K, V>) => G,
       thisArg?: any
-    ): Map<G, number>;
+    ): Sequence<G, number>;
 
     /**
-     * Returns a `Map` of sequences, grouped by the return value of the
+     * Returns a `Sequence` of `Sequences`, grouped by the return value of the
      * `grouper` function.
      *
-     * Note: Because this returns a Map, this method is not lazy.
+     * Note: This is not a lazy operation.
      */
     groupBy<G>(
       grouper: (value?: V, key?: K, seq?: Sequence<K, V>) => G,
       thisArg?: any
-    ): Map<G, Sequence<K, V>>;
+    ): Sequence<G, Sequence<K, V>>;
 
     sort(comparator?: (valueA: V, valueB: V) => number): Sequence<K, V>;
 
@@ -619,8 +656,14 @@ declare module 'immutable' {
    * better mirror the behavior of JavaScript's `Array`, and add others which do
    * not make sense on non-indexed sequences such as `indexOf`.
    *
-   * Like JavaScript arrays, `IndexedSequence`s may be sparse, skipping over some
-   * indices and may have a length larger than the highest index.
+   * Unlike JavaScript arrays, `IndexedSequence`s are always dense. "Unset"
+   * indices and `undefined` indices are indistinguishable, and all indices from
+   * 0 to `length` are visited when iterated.
+   *
+   * All IndexedSequence methods return re-indexed Sequences. In other words,
+   * indices always start at 0 and increment until length. If you wish to
+   * preserve indices, using them as keys, use `toKeyedSeq()`.
+   *
    */
 
   export interface IndexedSequence<T> extends Sequence<number, T> {
@@ -676,20 +719,6 @@ declare module 'immutable' {
     splice(index: number, removeNum: number, ...values: any[]): IndexedSequence<T>;
 
     /**
-     * When IndexedSequence is converted to an array, the index keys are
-     * maintained. This differs from the behavior of Sequence which
-     * simply makes a dense array of all values.
-     * @override
-     */
-    toArray(): Array<T>;
-
-    /**
-     * This has the same altered behavior as `toArray`.
-     * @override
-     */
-    toVector(): Vector<T>;
-
-    /**
      * Returns the value associated with the provided index, or notSetValue if
      * the index is beyond the bounds of the sequence.
      *
@@ -706,31 +735,26 @@ declare module 'immutable' {
     concat(...valuesOrSequences: any[]): IndexedSequence<any>;
 
     /**
-     * This new behavior will not only iterate through the sequence in reverse,
-     * but it will also reverse the indices so the last value will report being
-     * at index 0. If you wish to preserve the original indices, set
-     * maintainIndices to true.
+     * Returns a new IndexedSequence with this sequences values in the
+     * reversed order.
      * @override
      */
-    reverse(maintainIndices?: boolean): IndexedSequence<T>;
+    reverse(): IndexedSequence<T>;
 
     /**
-     * Indexed sequences have a different `filter` behavior, where the filtered
-     * values have new indicies incrementing from 0. If you want to preserve the
-     * original indicies, set maintainIndices to true.
+     * Returns IndexedSequence.
      * @override
      */
     filter(
       predicate: (value?: T, index?: number, seq?: IndexedSequence<T>) => boolean,
-      thisArg?: any,
-      maintainIndices?: boolean
+      thisArg?: any
     ): IndexedSequence<T>;
 
     /**
-     * Adds the ability to maintain original indices.
+     * Returns IndexedSequence.
      * @override
      */
-    slice(start: number, end?: number, maintainIndices?: boolean): IndexedSequence<T>;
+    slice(begin?: number, end?: number): IndexedSequence<T>;
 
 
     /**
@@ -754,79 +778,75 @@ declare module 'immutable' {
     ): IndexedSequence<M>;
 
     /**
-     * Has the same altered behavior as `takeWhile`.
+     * Returns IndexedSequence
      * @override
      */
-    takeLast(amount: number, maintainIndices?: boolean): IndexedSequence<T>;
+    takeLast(amount: number): IndexedSequence<T>;
 
     /**
-     * Has the same altered behavior as `takeWhile`.
+     * Returns IndexedSequence
      * @override
      */
     takeUntil(
       predicate: (value?: T, index?: number, seq?: IndexedSequence<T>) => boolean,
-      thisArg?: any,
-      maintainIndices?: boolean
+      thisArg?: any
     ): IndexedSequence<T>;
 
     /**
-     * Has the same altered behavior as `skipWhile`.
+     * Returns IndexedSequence
      * @override
      */
-    skip(amount: number, maintainIndices?: boolean): IndexedSequence<T>;
+    skip(amount: number): IndexedSequence<T>;
 
     /**
-     * Has the same altered behavior as `skipWhile`.
+     * Returns IndexedSequence
      * @override
      */
-    skipLast(amount: number, maintainIndices?: boolean): IndexedSequence<T>;
+    skipLast(amount: number): IndexedSequence<T>;
 
     /**
-     * Indexed sequences have a different `skipWhile` behavior. The first
-     * non-skipped value will have an index of 0. If you want to preserve the
-     * original indicies, set maintainIndices to true.
+     * Returns IndexedSequence
      * @override
      */
     skipWhile(
       predicate: (value?: T, index?: number, seq?: IndexedSequence<T>) => boolean,
-      thisArg?: any,
-      maintainIndices?: boolean
+      thisArg?: any
     ): IndexedSequence<T>;
 
     /**
-     * Has the same altered behavior as `skipWhile`.
+     * Returns IndexedSequence
      * @override
      */
     skipUntil(
       predicate: (value?: T, index?: number, seq?: IndexedSequence<T>) => boolean,
-      thisArg?: any,
-      maintainIndices?: boolean
+      thisArg?: any
     ): IndexedSequence<T>;
 
     /**
-     * Indexed sequences have a different `groupBy` behavior. Each group will be
-     * a new indexed sequence starting with an index of 0. If you want to preserve
-     * the original indicies, set maintainIndices to true.
+     * Returns Sequence<G, IndexedSequence<T>>
      * @override
      */
     groupBy<G>(
       grouper: (value?: T, index?: number, seq?: IndexedSequence<T>) => G,
-      thisArg?: any,
-      maintainIndices?: boolean
-    ): Map<G, any/*IndexedSequence<T>*/>; // Bug: exposing this causes the type checker to implode.
+      thisArg?: any
+    ): Sequence<G, any/*IndexedSequence<T>*/>; // Bug: exposing this causes the type checker to implode.
 
-
+    /**
+     * Returns an IndexedSequence
+     * @override
+     */
     sort(
-      comparator?: (valueA: T, valueB: T) => number,
-      maintainIndices?: boolean
+      comparator?: (valueA: T, valueB: T) => number
     ): IndexedSequence<T>;
 
+    /**
+     * Returns an IndexedSequence
+     * @override
+     */
     sortBy<S>(
       sortValueMapper: (value?: T, index?: number, seq?: IndexedSequence<T>) => S,
-      comparator?: (valueA: S, valueB: S) => number,
-      maintainIndices?: boolean
+      comparator?: (valueA: S, valueB: S) => number
     ): IndexedSequence<T>;
-
 
     /**
      * Returns an IndexedSequence
@@ -1353,12 +1373,10 @@ declare module 'immutable' {
    * Vector
    * ------
    *
-   * Vectors are like a Map with numeric keys which always iterate in the order
-   * of their keys. They may be sparse: if an index has not been set, it will not
-   * be iterated over. Also, via `setBounds` (or `fromArray` with a sparse array),
-   * a Vector may have a length higher than the highest index.
-   *
-   * @see: [MDN: Array relationship between length and numeric properties](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#Relationship_between_length_and_numerical_properties_2).
+   * Vectors are ordered indexed dense collections, much like a JavaScript
+   * Array. Unlike a JavaScript Array, there is no distinction between an
+   * "unset" index and an index set to `undefined`. `Vector#forEach` visits all
+   * indices from 0 to length, regardless of if they are defined.
    */
 
   export module Vector {
@@ -1404,7 +1422,7 @@ declare module 'immutable' {
 
     /**
      * Returns a new Vector which excludes this `index`. It will not affect the
-     * length of the Vector, instead leaving a sparse hole.
+     * length of the Vector, instead leaving an undefined value.
      *
      * `index` may be a negative number, which indexes back from the end of the
      * Vector. `v.delete(-1)` deletes the last item in the Vector.
@@ -1423,19 +1441,17 @@ declare module 'immutable' {
     /**
      * An iterator of this Vector's keys.
      */
-    keys(sparse?: boolean): Iterator<number>;
+    keys(): Iterator<number>;
 
     /**
      * An iterator of this Vector's values.
      */
-    values(sparse?: boolean): Iterator<T>;
+    values(): Iterator<T>;
 
     /**
      * An iterator of this Vector's entries as [key, value] tuples.
-     *
-     * `sparse` defaults to true for entries.
      */
-    entries(sparse?: boolean): Iterator</*[number, T]*/Array<any>>;
+    entries(): Iterator</*[number, T]*/Array<any>>;
 
     /**
      * Returns a new Vector with the provided `values` appended, starting at this
@@ -1553,7 +1569,7 @@ declare module 'immutable' {
      * Returns a new Vector with length `length`. If `length` is less than this
      * Vector's length, the new Vector will exclude values at the higher indices.
      * If `length` is greater than this Vector's length, the new Vector will have
-     * unset sparse holes for the newly available indices.
+     * undefined values for the newly available indices.
      */
     setLength(length: number): Vector<T>;
 
